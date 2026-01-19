@@ -28,7 +28,7 @@ npm run dev
 - `ZHIPU_TTS_MODEL`：TTS 模型（不填则只返回文字，不会有语音；推荐 `glm-tts`）
 - `ZHIPU_TTS_ENDPOINT`：TTS 接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/audio/speech`）
 - `ZHIPU_TTS_VOICE`：可选，音色/发音人（按你手上的智谱文档填写）
-- `ZHIPU_VOICE_MODEL`：可选，语音对话模型（默认 `glm-2-voice`）
+- `ZHIPU_VOICE_MODEL`：可选，语音对话模型（默认 `glm-4-voice`）
 - `ZHIPU_VOICE_ENDPOINT`：可选，语音对话接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/chat/completions`）
 - `STORY_ADMIN_TOKEN`：后台查看成长记录用的 token（用于 `/admin` 和 `/api/memories`）
 - `STORY_LOG_PATH`：可选，记录文件路径（默认 `data/memories.jsonl`）

@@ -100,7 +100,7 @@ export async function POST(req: Request) {
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
     const model =
-      process.env.ZHIPU_VOICE_MODEL?.trim() || "glm-2-voice";
+      process.env.ZHIPU_VOICE_MODEL?.trim() || "glm-4-voice";
     const endpoint =
       process.env.ZHIPU_VOICE_ENDPOINT?.trim() ||
       "https://open.bigmodel.cn/api/paas/v4/chat/completions";
