@@ -5,10 +5,14 @@ import { randomUUID } from "node:crypto";
 export type MemoryEntry = {
   id: string;
   createdAt: string;
+  kind?: "story" | "chat";
   seed: string;
   story: string;
   requestId?: string;
   hasAudio: boolean;
+  conversationId?: string;
+  kidText?: string;
+  assistantText?: string;
   userAgent?: string;
   ip?: string;
 };

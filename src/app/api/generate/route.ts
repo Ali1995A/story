@@ -88,6 +88,7 @@ export async function POST(req: Request) {
     if (!ttsModel) {
       try {
         await appendMemory({
+          kind: "story",
           seed: seedForLog,
           story: storyForLog,
           requestId,
@@ -125,6 +126,7 @@ export async function POST(req: Request) {
 
     try {
       await appendMemory({
+        kind: "story",
         seed: seedForLog,
         story: storyForLog,
         requestId,

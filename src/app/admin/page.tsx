@@ -5,10 +5,14 @@ import { useMemo, useState } from "react";
 type MemoryEntry = {
   id: string;
   createdAt: string;
+  kind?: "story" | "chat";
   seed: string;
   story: string;
   requestId?: string;
   hasAudio: boolean;
+  conversationId?: string;
+  kidText?: string;
+  assistantText?: string;
   userAgent?: string;
   ip?: string;
 };
@@ -131,6 +135,8 @@ export default function AdminPage() {
                   {formatLocalTime(m.createdAt)}
                 </div>
                 <div className="text-xs text-black/50">
+                  {(m.kind || "story") === "chat" ? "对话" : "故事"}
+                  {" · "}
                   {m.hasAudio ? "有语音" : "无语音"}
                   {m.requestId ? ` · ${m.requestId}` : ""}
                 </div>
@@ -149,6 +155,23 @@ export default function AdminPage() {
                   {m.story}
                 </div>
               </div>
+
+              {(m.kind || "story") === "chat" ? (
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                    <div className="text-xs font-semibold text-black/50">孩子</div>
+                    <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                      {m.kidText || "（语音）"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                    <div className="text-xs font-semibold text-black/50">海皮</div>
+                    <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                      {m.assistantText || ""}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </section>
           ))}
         </div>
@@ -156,4 +179,3 @@ export default function AdminPage() {
     </div>
   );
 }
-

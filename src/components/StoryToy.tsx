@@ -16,12 +16,37 @@ type GenerateResult =
       requestId?: string;
     };
 
+type ChatMessage = { role: "user" | "assistant"; content: string };
+
+type ChatResult =
+  | {
+      ok: true;
+      conversationId: string;
+      assistantText: string;
+      assistantAudioBase64?: string;
+      assistantAudioMime?: string;
+      requestId?: string;
+    }
+  | {
+      ok: false;
+      error: string;
+      requestId?: string;
+    };
+
 function base64ToObjectUrl(base64: string, mime: string) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   const blob = new Blob([bytes], { type: mime });
   return URL.createObjectURL(blob);
+}
+
+async function blobToBase64(blob: Blob) {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
 
 function SparkleIcon() {
@@ -93,13 +118,29 @@ export default function StoryToy() {
   const [error, setError] = useState<string>("");
   const [playing, setPlaying] = useState(false);
   const [showText, setShowText] = useState(false);
+  const [conversationId, setConversationId] = useState<string>("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [recording, setRecording] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const chatAudioRef = useRef<HTMLAudioElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
+  const chatCleanupUrlRef = useRef<string>("");
   const hasUserToggledShowTextRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const chatMessagesRef = useRef<ChatMessage[]>([]);
 
   const canGenerate = useMemo(() => seed.trim().length > 0 && !busy, [seed, busy]);
+  const canSendChat = useMemo(
+    () => story.trim().length > 0 && chatInput.trim().length > 0 && !chatBusy,
+    [story, chatInput, chatBusy],
+  );
 
   const shouldDefaultShowText = () => {
     if (typeof window === "undefined") return false;
@@ -132,23 +173,67 @@ export default function StoryToy() {
   useEffect(() => {
     return () => {
       if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
+      if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
+
+  const stopRecordingNow = () => {
+    try {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    } catch {
+      // ignore
+    }
+    try {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {
+      // ignore
+    }
+    streamRef.current = null;
+    mediaRecorderRef.current = null;
+    recordedChunksRef.current = [];
+    setRecording(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopRecordingNow();
     };
   }, []);
 
   const resetAll = () => {
+    stopRecordingNow();
     setSeed("");
     setStory("");
     setError("");
     setPlaying(false);
     hasUserToggledShowTextRef.current = false;
     setShowText(shouldDefaultShowText());
+    setConversationId("");
+    setChatMessages([]);
+    setChatInput("");
+    setChatError("");
+    setChatBusy(false);
+    setRecording(false);
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    if (chatAudioRef.current) {
+      chatAudioRef.current.pause();
+      chatAudioRef.current.currentTime = 0;
+    }
     if (cleanupUrlRef.current) {
       URL.revokeObjectURL(cleanupUrlRef.current);
       cleanupUrlRef.current = "";
+    }
+    if (chatCleanupUrlRef.current) {
+      URL.revokeObjectURL(chatCleanupUrlRef.current);
+      chatCleanupUrlRef.current = "";
     }
     setAudioUrl("");
     textareaRef.current?.focus();
@@ -157,10 +242,15 @@ export default function StoryToy() {
   const generate = async () => {
     if (!canGenerate) return;
 
+    stopRecordingNow();
     setBusy(true);
     setError("");
     if (!hasUserToggledShowTextRef.current) setShowText(shouldDefaultShowText());
     setPlaying(false);
+    setConversationId("");
+    setChatMessages([]);
+    setChatInput("");
+    setChatError("");
     if (audioRef.current) audioRef.current.pause();
 
     await unlockAudioForIOS();
@@ -218,6 +308,131 @@ export default function StoryToy() {
       }
     } catch {
       setPlaying(false);
+    }
+  };
+
+  const pickRecordingMime = () => {
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/mpeg",
+    ];
+    for (const c of candidates) {
+      try {
+        if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) {
+          return c;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return "";
+  };
+
+  const startRecording = async () => {
+    if (recording || chatBusy) return;
+    setChatError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      recordedChunksRef.current = [];
+      const mimeType = pickRecordingMime();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        setRecording(false);
+        try {
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          // ignore
+        }
+        streamRef.current = null;
+        mediaRecorderRef.current = null;
+
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType });
+        recordedChunksRef.current = [];
+        if (!blob.size) return;
+        const base64 = await blobToBase64(blob);
+        await sendChat({ inputAudioBase64: base64, inputAudioMime: blob.type });
+      };
+      recorder.start(250);
+      setRecording(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "无法使用麦克风";
+      setChatError(msg);
+      setRecording(false);
+      try {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {
+        // ignore
+      }
+      streamRef.current = null;
+    }
+  };
+
+  const playChatAudio = async (base64: string, mime: string) => {
+    const url = base64ToObjectUrl(base64, mime || "audio/wav");
+    if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
+    chatCleanupUrlRef.current = url;
+    if (!chatAudioRef.current) return;
+    chatAudioRef.current.src = url;
+    chatAudioRef.current.load();
+    try {
+      await unlockAudioForIOS();
+      await chatAudioRef.current.play();
+    } catch {
+      // ignore
+    }
+  };
+
+  const sendChat = async (opts: { inputText?: string; inputAudioBase64?: string; inputAudioMime?: string }) => {
+    if (!story.trim() || chatBusy) return;
+    const inputText = opts.inputText?.trim() || "";
+    const inputAudioBase64 = opts.inputAudioBase64 || "";
+    const inputAudioMime = opts.inputAudioMime || "";
+    if (!inputText && !inputAudioBase64) return;
+
+    setChatBusy(true);
+    setChatError("");
+
+    if (inputText) {
+      setChatMessages((prev) => [...prev, { role: "user", content: inputText }]);
+    } else {
+      setChatMessages((prev) => [...prev, { role: "user", content: "（语音）" }]);
+    }
+
+    try {
+      const history = [...chatMessagesRef.current].slice(-10);
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversationId || undefined,
+          seed,
+          story,
+          history,
+          inputText: inputText || undefined,
+          inputAudioBase64: inputAudioBase64 || undefined,
+          inputAudioMime: inputAudioMime || undefined,
+        }),
+      });
+      const data = (await res.json()) as ChatResult;
+      if (!data.ok) throw new Error(data.error);
+
+      setConversationId(data.conversationId);
+      setChatMessages((prev) => [...prev, { role: "assistant", content: data.assistantText }]);
+      if (data.assistantAudioBase64 && data.assistantAudioMime) {
+        await playChatAudio(data.assistantAudioBase64, data.assistantAudioMime);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "对话失败";
+      setChatError(msg);
+    } finally {
+      setChatBusy(false);
     }
   };
 
@@ -441,6 +656,95 @@ export default function StoryToy() {
               </button>
             </div>
           ) : null}
+
+          {story ? (
+            <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 shadow-sm md:p-6 lg:p-8">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-black/75 md:text-base">
+                  海皮老师聊一聊
+                </div>
+                <div className="text-xs text-black/45">
+                  {chatBusy ? "思考中…" : recording ? "录音中…" : ""}
+                </div>
+              </div>
+
+              <div className="mt-3 max-h-[38vh] space-y-2 overflow-auto rounded-2xl border border-black/5 bg-white/70 p-3">
+                {chatMessages.length === 0 ? (
+                  <div className="text-sm text-black/55">
+                    你可以按下麦克风说话，或者打字问海皮老师关于这个故事的问题。
+                  </div>
+                ) : null}
+
+                {chatMessages.map((m, idx) => (
+                  <div
+                    key={`${m.role}-${idx}`}
+                    className={
+                      m.role === "assistant"
+                        ? "rounded-2xl bg-[rgba(255,90,165,0.10)] px-3 py-2 text-[15px] leading-7 text-black/80"
+                        : "rounded-2xl bg-black/5 px-3 py-2 text-[15px] leading-7 text-black/80"
+                    }
+                  >
+                    <div className="text-[11px] font-semibold text-black/45">
+                      {m.role === "assistant" ? "海皮" : "孩子"}
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap break-words">{m.content}</div>
+                  </div>
+                ))}
+              </div>
+
+              {chatError ? (
+                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {chatError}
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => (recording ? stopRecordingNow() : startRecording())}
+                  disabled={chatBusy || !navigator.mediaDevices}
+                  className="grid h-12 w-12 place-items-center rounded-2xl border border-black/10 bg-white/80 text-lg shadow-sm disabled:opacity-40 active:scale-[0.99]"
+                  aria-label={recording ? "停止录音" : "开始录音"}
+                >
+                  {recording ? "■" : "🎤"}
+                </button>
+
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (canSendChat) {
+                        const text = chatInput;
+                        setChatInput("");
+                        void sendChat({ inputText: text });
+                      }
+                    }
+                  }}
+                  placeholder="想问海皮老师什么？"
+                  className="h-12 w-full rounded-2xl border border-black/10 bg-white/80 px-4 text-sm outline-none md:text-base"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+
+                <button
+                  type="button"
+                  disabled={!canSendChat}
+                  onClick={() => {
+                    const text = chatInput;
+                    setChatInput("");
+                    void sendChat({ inputText: text });
+                  }}
+                  className="h-12 rounded-2xl bg-black px-4 text-sm font-semibold text-white disabled:opacity-40 md:text-base"
+                  aria-label="发送"
+                >
+                  发送
+                </button>
+              </div>
+            </div>
+          ) : null}
           </div>
         </div>
 
@@ -453,6 +757,8 @@ export default function StoryToy() {
           onEnded={() => setPlaying(false)}
           className="hidden"
         />
+
+        <audio ref={chatAudioRef} playsInline preload="auto" className="hidden" />
       </main>
     </div>
   );

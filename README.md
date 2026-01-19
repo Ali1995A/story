@@ -28,6 +28,8 @@ npm run dev
 - `ZHIPU_TTS_MODEL`：TTS 模型（不填则只返回文字，不会有语音；推荐 `glm-tts`）
 - `ZHIPU_TTS_ENDPOINT`：TTS 接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/audio/speech`）
 - `ZHIPU_TTS_VOICE`：可选，音色/发音人（按你手上的智谱文档填写）
+- `ZHIPU_VOICE_MODEL`：可选，语音对话模型（默认 `glm-2-voice`）
+- `ZHIPU_VOICE_ENDPOINT`：可选，语音对话接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/chat/completions`）
 - `STORY_ADMIN_TOKEN`：后台查看成长记录用的 token（用于 `/admin` 和 `/api/memories`）
 - `STORY_LOG_PATH`：可选，记录文件路径（默认 `data/memories.jsonl`）
 - `STORY_REMOTE_LOG_URL`：可选，远端存储服务地址（例如 `https://mem.cciscc.cc/story-memories`）
@@ -45,6 +47,14 @@ npm run dev
 注意：如果部署在无持久化磁盘的平台（例如 Vercel 默认环境），本地文件可能不会长期保存。要长期记录请使用带持久化存储的部署方式，或把记录路径指向你自己的持久化盘。
 
 如果配置了 `STORY_REMOTE_LOG_URL` + `STORY_REMOTE_LOG_TOKEN`，应用会优先把记录写入远端存储，并从远端读取（更适合 Vercel 这类无持久化磁盘环境）。
+
+## 海皮老师语音对话
+
+生成故事后，右侧会出现「海皮老师聊一聊」：
+
+- 支持麦克风语音输入（需要浏览器/微信授权麦克风权限）
+- 也支持打字输入（当语音不可用或听不清时）
+- 对话会围绕刚生成的故事，逐步引导孩子思考与小科普
 
 ## 部署到 Vercel
 
