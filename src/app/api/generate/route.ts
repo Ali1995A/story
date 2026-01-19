@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     const ttsEndpoint =
       process.env.ZHIPU_TTS_ENDPOINT?.trim() ||
       "https://open.bigmodel.cn/api/paas/v4/audio/speech";
-    const ttsVoice = process.env.ZHIPU_TTS_VOICE?.trim();
+    const ttsVoice = process.env.ZHIPU_TTS_VOICE?.trim() || undefined;
 
     const body = (await req.json().catch(() => ({}))) as { seed?: unknown };
     const seedRaw = typeof body.seed === "string" ? body.seed : "";
