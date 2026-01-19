@@ -20,9 +20,40 @@ function getLogPath() {
   );
 }
 
+function getRemoteBaseUrl() {
+  const raw = process.env.STORY_REMOTE_LOG_URL?.trim();
+  if (!raw) return;
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
+
+function getRemoteToken() {
+  const raw = process.env.STORY_REMOTE_LOG_TOKEN?.trim();
+  return raw || undefined;
+}
+
 export async function appendMemory(
   entry: Omit<MemoryEntry, "id" | "createdAt">,
 ) {
+  const remoteBaseUrl = getRemoteBaseUrl();
+  const remoteToken = getRemoteToken();
+  if (remoteBaseUrl && remoteToken) {
+    const res = await fetch(`${remoteBaseUrl}/append`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${remoteToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(entry),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `Remote log failed: ${res.status} ${res.statusText}${text ? ` - ${text}` : ""}`,
+      );
+    }
+    return (await res.json()) as MemoryEntry;
+  }
+
   const fullPath = getLogPath();
   await mkdir(path.dirname(fullPath), { recursive: true });
 
@@ -39,6 +70,32 @@ export async function appendMemory(
 export async function readMemories(opts?: { limit?: number }) {
   const limitRaw = opts?.limit ?? 200;
   const limit = Math.max(1, Math.min(1000, Math.trunc(limitRaw)));
+
+  const remoteBaseUrl = getRemoteBaseUrl();
+  const remoteToken = getRemoteToken();
+  if (remoteBaseUrl && remoteToken) {
+    const res = await fetch(`${remoteBaseUrl}/memories?limit=${limit}`, {
+      headers: { Authorization: `Bearer ${remoteToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `Remote read failed: ${res.status} ${res.statusText}${text ? ` - ${text}` : ""}`,
+      );
+    }
+    const data = (await res.json()) as unknown;
+    if (
+      !data ||
+      typeof data !== "object" ||
+      !("ok" in data) ||
+      (data as { ok?: unknown }).ok !== true
+    ) {
+      throw new Error("Remote read returned invalid response");
+    }
+    return ((data as { memories?: unknown }).memories as MemoryEntry[]) ?? [];
+  }
+
   const fullPath = getLogPath();
 
   try {
@@ -60,4 +117,3 @@ export async function readMemories(opts?: { limit?: number }) {
     return [];
   }
 }
-

@@ -31,10 +31,17 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const limit = Number(url.searchParams.get("limit") ?? "200");
-  const memories = await readMemories({ limit });
-  return NextResponse.json(
-    { ok: true, memories },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+  try {
+    const memories = await readMemories({ limit });
+    return NextResponse.json(
+      { ok: true, memories },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to read memories";
+    return NextResponse.json(
+      { ok: false, error: message },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 }
-
