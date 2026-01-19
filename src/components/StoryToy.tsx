@@ -213,6 +213,10 @@ export default function StoryToy() {
     }
   };
 
+  const tapInput = () => {
+    textareaRef.current?.focus();
+  };
+
   return (
     <div className="app-shell relative flex items-stretch justify-center overflow-hidden bg-[radial-gradient(1200px_700px_at_30%_10%,rgba(255,90,165,0.40),transparent_60%),radial-gradient(900px_600px_at_70%_25%,rgba(124,92,255,0.22),transparent_60%),linear-gradient(180deg,#fff6fb,#ffe7f3_55%,#fff6fb)] px-[max(16px,env(safe-area-inset-left))] py-[max(16px,env(safe-area-inset-top))] md:px-[max(32px,env(safe-area-inset-left))] md:py-[max(28px,env(safe-area-inset-top))]">
       <div className="pointer-events-none absolute -top-24 left-1/2 h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,90,165,0.50),transparent_60%)] blur-2xl" />
@@ -244,7 +248,7 @@ export default function StoryToy() {
           <button
             type="button"
             className="mt-4 w-full rounded-3xl border border-black/5 bg-white/70 p-4 text-left shadow-sm active:scale-[0.99] md:p-5"
-            onClick={() => textareaRef.current?.focus()}
+            onClick={tapInput}
             aria-label="输入"
           >
             <div className="flex items-center gap-3">
@@ -335,26 +339,89 @@ export default function StoryToy() {
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-3 gap-3 md:flex-1 md:content-center md:gap-6">
-              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center md:p-6 lg:p-8">
+              <button
+                type="button"
+                onClick={tapInput}
+                className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm active:scale-[0.99] md:p-6 lg:p-8"
+                aria-label="点：回到输入"
+              >
                 <div className="text-2xl" aria-hidden="true">
                   👆
                 </div>
                 <div className="mt-2 text-xs text-black/55 md:text-sm lg:text-base">点</div>
-              </div>
-              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center md:p-6 lg:p-8">
+              </button>
+              <button
+                type="button"
+                onClick={generate}
+                disabled={!canGenerate}
+                className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] md:p-6 lg:p-8"
+                aria-label="变：再生成一次"
+              >
                 <div className="text-2xl" aria-hidden="true">
                   ✨
                 </div>
                 <div className="mt-2 text-xs text-black/55 md:text-sm lg:text-base">变</div>
-              </div>
-              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center md:p-6 lg:p-8">
+              </button>
+              <button
+                type="button"
+                onClick={togglePlay}
+                disabled={!audioUrl}
+                className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] md:p-6 lg:p-8"
+                aria-label="听：播放或暂停"
+              >
                 <div className="text-2xl" aria-hidden="true">
                   🔊
                 </div>
                 <div className="mt-2 text-xs text-black/55 md:text-sm lg:text-base">听</div>
-              </div>
+              </button>
             </div>
           )}
+
+          {showText ? (
+            <div className="mt-4 hidden grid-cols-3 gap-3 md:grid md:gap-6">
+              <button
+                type="button"
+                onClick={tapInput}
+                className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm active:scale-[0.99] lg:p-6"
+                aria-label="点：回到输入"
+              >
+                <div className="text-2xl" aria-hidden="true">
+                  👆
+                </div>
+                <div className="mt-2 text-xs text-black/55 md:text-sm lg:text-base">
+                  点
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={generate}
+                disabled={!canGenerate}
+                className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] lg:p-6"
+                aria-label="变：再生成一次"
+              >
+                <div className="text-2xl" aria-hidden="true">
+                  ✨
+                </div>
+                <div className="mt-2 text-xs text-black/55 md:text-sm lg:text-base">
+                  变
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={togglePlay}
+                disabled={!audioUrl}
+                className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] lg:p-6"
+                aria-label="听：播放或暂停"
+              >
+                <div className="text-2xl" aria-hidden="true">
+                  🔊
+                </div>
+                <div className="mt-2 text-xs text-black/55 md:text-sm lg:text-base">
+                  听
+                </div>
+              </button>
+            </div>
+          ) : null}
           </div>
         </div>
 
