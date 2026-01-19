@@ -108,9 +108,11 @@ export default function StoryToy() {
 
   useEffect(() => {
     const setAppHeight = () => {
+      const viewport = window.visualViewport;
+      const height = viewport?.height ?? window.innerHeight;
       document.documentElement.style.setProperty(
         "--app-height",
-        `${window.innerHeight}px`,
+        `${Math.round(height)}px`,
       );
       if (!hasUserToggledShowTextRef.current) {
         setShowText(shouldDefaultShowText());
@@ -118,7 +120,13 @@ export default function StoryToy() {
     };
     setAppHeight();
     window.addEventListener("resize", setAppHeight);
-    return () => window.removeEventListener("resize", setAppHeight);
+    window.visualViewport?.addEventListener("resize", setAppHeight);
+    window.visualViewport?.addEventListener("scroll", setAppHeight);
+    return () => {
+      window.removeEventListener("resize", setAppHeight);
+      window.visualViewport?.removeEventListener("resize", setAppHeight);
+      window.visualViewport?.removeEventListener("scroll", setAppHeight);
+    };
   }, []);
 
   useEffect(() => {
@@ -214,14 +222,25 @@ export default function StoryToy() {
   };
 
   const tapInput = () => {
-    textareaRef.current?.focus();
+    const el = textareaRef.current;
+    el?.focus();
+    // WeChat iOS webview sometimes needs a nudge to avoid being hidden by the keyboard.
+    if (el && typeof el.scrollIntoView === "function") {
+      requestAnimationFrame(() => {
+        try {
+          el.scrollIntoView({ block: "center" });
+        } catch {
+          // ignore
+        }
+      });
+    }
   };
 
   return (
     <div className="app-shell relative flex items-stretch justify-center overflow-hidden bg-[radial-gradient(1200px_700px_at_30%_10%,rgba(255,90,165,0.40),transparent_60%),radial-gradient(900px_600px_at_70%_25%,rgba(124,92,255,0.22),transparent_60%),linear-gradient(180deg,#fff6fb,#ffe7f3_55%,#fff6fb)] px-[max(16px,env(safe-area-inset-left))] py-[max(16px,env(safe-area-inset-top))] md:px-[max(32px,env(safe-area-inset-left))] md:py-[max(28px,env(safe-area-inset-top))]">
       <div className="pointer-events-none absolute -top-24 left-1/2 h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,90,165,0.50),transparent_60%)] blur-2xl" />
       <main className="relative w-full max-w-none pb-[max(18px,env(safe-area-inset-bottom))] xl:max-w-[1400px] 2xl:max-w-[1600px]">
-        <div className="grid gap-4 md:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] md:gap-6 lg:gap-8">
+        <div className="grid gap-4 md:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] md:gap-6 lg:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:gap-8">
           <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur md:flex md:flex-col md:p-6 lg:p-8">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -334,7 +353,7 @@ export default function StoryToy() {
           </div>
 
           {showText ? (
-            <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 text-[15px] leading-7 text-black/80 md:flex-1 md:p-6 md:text-lg md:leading-9 lg:p-8 lg:text-xl lg:leading-10">
+            <div className="mt-4 overflow-auto rounded-3xl border border-black/5 bg-white/70 p-4 text-[15px] leading-7 text-black/80 md:flex-1 md:p-6 md:text-lg md:leading-9 lg:p-8 lg:text-xl lg:leading-10">
               {story ? story : "（还没有故事）"}
             </div>
           ) : (

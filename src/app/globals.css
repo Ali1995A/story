@@ -38,10 +38,16 @@ body {
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
 
 .app-shell {
   min-height: var(--app-height, 100vh);
+  height: var(--app-height, 100vh);
 }
