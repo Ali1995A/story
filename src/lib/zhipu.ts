@@ -55,7 +55,9 @@ export type ZhipuTtsOptions = {
   model: string;
   input: string;
   voice?: string;
-  format?: string;
+  response_format?: "wav";
+  speed?: number;
+  volume?: number;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -116,7 +118,9 @@ export async function zhipuTts(opts: ZhipuTtsOptions) {
       model: opts.model,
       input: opts.input,
       voice: opts.voice,
-      format: opts.format ?? "mp3",
+      speed: opts.speed ?? 1.0,
+      volume: opts.volume ?? 1.0,
+      response_format: opts.response_format ?? "wav",
     }),
   });
 

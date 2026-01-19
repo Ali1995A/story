@@ -31,7 +31,7 @@ export async function POST(req: Request) {
 
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
-    const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4-flash";
+    const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4.7";
     const ttsModel = process.env.ZHIPU_TTS_MODEL?.trim();
     const ttsEndpoint =
       process.env.ZHIPU_TTS_ENDPOINT?.trim() ||
@@ -94,7 +94,9 @@ export async function POST(req: Request) {
       model: ttsModel,
       input: story,
       voice: ttsVoice,
-      format: "mp3",
+      response_format: "wav",
+      speed: 1.0,
+      volume: 1.0,
     });
     requestId = tts.requestId ?? requestId;
 
@@ -116,4 +118,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

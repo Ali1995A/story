@@ -24,8 +24,8 @@ npm run dev
 把这些配置到 `.env.local`（本地）或 Vercel Project Settings → Environment Variables（线上）：
 
 - `ZHIPU_API_KEY`：智谱 API Key
-- `ZHIPU_CHAT_MODEL`：生成故事的模型（默认 `glm-4-flash`）
-- `ZHIPU_TTS_MODEL`：TTS 模型（不填则只返回文字，不会有语音）
+- `ZHIPU_CHAT_MODEL`：生成故事的模型（默认 `glm-4.7`）
+- `ZHIPU_TTS_MODEL`：TTS 模型（不填则只返回文字，不会有语音；推荐 `glm-tts`）
 - `ZHIPU_TTS_ENDPOINT`：TTS 接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/audio/speech`）
 - `ZHIPU_TTS_VOICE`：可选，音色/发音人（按你手上的智谱文档填写）
 
