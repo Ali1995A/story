@@ -97,8 +97,14 @@ export default function StoryToy() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
+  const hasUserToggledShowTextRef = useRef(false);
 
   const canGenerate = useMemo(() => seed.trim().length > 0 && !busy, [seed, busy]);
+
+  const shouldDefaultShowText = () => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(min-width: 768px)").matches;
+  };
 
   useEffect(() => {
     const setAppHeight = () => {
@@ -106,6 +112,9 @@ export default function StoryToy() {
         "--app-height",
         `${window.innerHeight}px`,
       );
+      if (!hasUserToggledShowTextRef.current) {
+        setShowText(shouldDefaultShowText());
+      }
     };
     setAppHeight();
     window.addEventListener("resize", setAppHeight);
@@ -123,7 +132,8 @@ export default function StoryToy() {
     setStory("");
     setError("");
     setPlaying(false);
-    setShowText(false);
+    hasUserToggledShowTextRef.current = false;
+    setShowText(shouldDefaultShowText());
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -141,7 +151,7 @@ export default function StoryToy() {
 
     setBusy(true);
     setError("");
-    setShowText(false);
+    if (!hasUserToggledShowTextRef.current) setShowText(shouldDefaultShowText());
     setPlaying(false);
     if (audioRef.current) audioRef.current.pause();
 
@@ -204,10 +214,11 @@ export default function StoryToy() {
   };
 
   return (
-    <div className="app-shell relative flex items-stretch justify-center overflow-hidden bg-[radial-gradient(1200px_700px_at_30%_10%,rgba(255,90,165,0.40),transparent_60%),radial-gradient(900px_600px_at_70%_25%,rgba(124,92,255,0.22),transparent_60%),linear-gradient(180deg,#fff6fb,#ffe7f3_55%,#fff6fb)] px-[max(16px,env(safe-area-inset-left))] py-[max(16px,env(safe-area-inset-top))]">
+    <div className="app-shell relative flex items-stretch justify-center overflow-hidden bg-[radial-gradient(1200px_700px_at_30%_10%,rgba(255,90,165,0.40),transparent_60%),radial-gradient(900px_600px_at_70%_25%,rgba(124,92,255,0.22),transparent_60%),linear-gradient(180deg,#fff6fb,#ffe7f3_55%,#fff6fb)] px-[max(16px,env(safe-area-inset-left))] py-[max(16px,env(safe-area-inset-top))] md:px-[max(32px,env(safe-area-inset-left))] md:py-[max(28px,env(safe-area-inset-top))]">
       <div className="pointer-events-none absolute -top-24 left-1/2 h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,90,165,0.50),transparent_60%)] blur-2xl" />
-      <main className="relative flex w-full max-w-[520px] flex-col gap-4 pb-[max(18px,env(safe-area-inset-bottom))]">
-        <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur">
+      <main className="relative w-full max-w-[520px] pb-[max(18px,env(safe-area-inset-bottom))] md:max-w-[920px] lg:max-w-[1200px]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:gap-6">
+          <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur md:flex md:flex-col md:p-6">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--pink-400),var(--lav-500))] text-white shadow-[0_10px_25px_rgba(255,90,165,0.25)]">
@@ -232,7 +243,7 @@ export default function StoryToy() {
 
           <button
             type="button"
-            className="mt-4 w-full rounded-3xl border border-black/5 bg-white/70 p-4 text-left shadow-sm active:scale-[0.99]"
+            className="mt-4 w-full rounded-3xl border border-black/5 bg-white/70 p-4 text-left shadow-sm active:scale-[0.99] md:p-5"
             onClick={() => textareaRef.current?.focus()}
             aria-label="输入"
           >
@@ -252,7 +263,7 @@ export default function StoryToy() {
                 autoCapitalize="off"
                 spellCheck={false}
                 placeholder="···"
-                className="min-h-[64px] w-full resize-none bg-transparent text-lg leading-7 outline-none placeholder:text-black/30"
+                className="min-h-[64px] w-full resize-none bg-transparent text-lg leading-7 outline-none placeholder:text-black/30 md:min-h-[76px] md:text-xl md:leading-8"
                 aria-label="随便输入"
               />
             </div>
@@ -290,9 +301,9 @@ export default function StoryToy() {
               {error}
             </div>
           ) : null}
-        </div>
+          </div>
 
-        <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur">
+          <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur md:p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[linear-gradient(135deg,rgba(255,90,165,0.22),rgba(124,92,255,0.18))] text-[color:var(--pink-600)]">
@@ -307,7 +318,10 @@ export default function StoryToy() {
 
             <button
               type="button"
-              onClick={() => setShowText((v) => !v)}
+              onClick={() => {
+                hasUserToggledShowTextRef.current = true;
+                setShowText((v) => !v);
+              }}
               className="rounded-2xl border border-black/5 bg-white/70 px-4 py-2 text-sm text-black/70 shadow-sm active:scale-[0.99]"
               aria-label="显示或隐藏文字"
             >
@@ -316,31 +330,32 @@ export default function StoryToy() {
           </div>
 
           {showText ? (
-            <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 text-[15px] leading-7 text-black/80">
+            <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 text-[15px] leading-7 text-black/80 md:flex-1 md:p-5 md:text-base md:leading-8">
               {story ? story : "（还没有故事）"}
             </div>
           ) : (
-            <div className="mt-4 grid grid-cols-3 gap-3">
-              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center">
+            <div className="mt-4 grid grid-cols-3 gap-3 md:flex-1 md:content-center md:gap-4">
+              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center md:p-6">
                 <div className="text-2xl" aria-hidden="true">
                   👆
                 </div>
-                <div className="mt-2 text-xs text-black/55">点</div>
+                <div className="mt-2 text-xs text-black/55 md:text-sm">点</div>
               </div>
-              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center">
+              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center md:p-6">
                 <div className="text-2xl" aria-hidden="true">
                   ✨
                 </div>
-                <div className="mt-2 text-xs text-black/55">变</div>
+                <div className="mt-2 text-xs text-black/55 md:text-sm">变</div>
               </div>
-              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center">
+              <div className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center md:p-6">
                 <div className="text-2xl" aria-hidden="true">
                   🔊
                 </div>
-                <div className="mt-2 text-xs text-black/55">听</div>
+                <div className="mt-2 text-xs text-black/55 md:text-sm">听</div>
               </div>
             </div>
           )}
+          </div>
         </div>
 
         <audio
