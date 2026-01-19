@@ -1,4 +1,5 @@
 import { zhipuChatCompletions, zhipuTts } from "@/lib/zhipu";
+import { appendMemory } from "@/lib/memories";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -28,6 +29,9 @@ function clampText(input: string, maxLen: number) {
 
 export async function POST(req: Request) {
   let requestId: string | undefined;
+  let seedForLog = "";
+  let storyForLog = "";
+  let hasAudioForLog = false;
 
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
@@ -41,6 +45,7 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as { seed?: unknown };
     const seedRaw = typeof body.seed === "string" ? body.seed : "";
     const seed = clampText(seedRaw, 200);
+    seedForLog = seed;
     if (!seed) {
       return NextResponse.json<ErrResponse>(
         { ok: false, error: "请输入一些字符" },
@@ -77,7 +82,22 @@ export async function POST(req: Request) {
     requestId = chatReqId ?? requestId;
 
     const story = clampText(content.replace(/\r\n/g, "\n"), 700);
+    storyForLog = story;
+    const ipFromHeaders =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
     if (!ttsModel) {
+      try {
+        await appendMemory({
+          seed: seedForLog,
+          story: storyForLog,
+          requestId,
+          hasAudio: false,
+          userAgent: req.headers.get("user-agent") ?? undefined,
+          ip: ipFromHeaders,
+        });
+      } catch {
+        // ignore logging failures
+      }
       return NextResponse.json<OkResponse>(
         {
           ok: true,
@@ -101,6 +121,20 @@ export async function POST(req: Request) {
       volume: 1.0,
     });
     requestId = tts.requestId ?? requestId;
+    hasAudioForLog = Boolean(tts.audioBase64);
+
+    try {
+      await appendMemory({
+        seed: seedForLog,
+        story: storyForLog,
+        requestId,
+        hasAudio: hasAudioForLog,
+        userAgent: req.headers.get("user-agent") ?? undefined,
+        ip: ipFromHeaders,
+      });
+    } catch {
+      // ignore logging failures
+    }
 
     return NextResponse.json<OkResponse>(
       {

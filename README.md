@@ -28,6 +28,19 @@ npm run dev
 - `ZHIPU_TTS_MODEL`：TTS 模型（不填则只返回文字，不会有语音；推荐 `glm-tts`）
 - `ZHIPU_TTS_ENDPOINT`：TTS 接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/audio/speech`）
 - `ZHIPU_TTS_VOICE`：可选，音色/发音人（按你手上的智谱文档填写）
+- `STORY_ADMIN_TOKEN`：后台查看成长记录用的 token（用于 `/admin` 和 `/api/memories`）
+- `STORY_LOG_PATH`：可选，记录文件路径（默认 `data/memories.jsonl`）
+
+## 成长记录（后台）
+
+每次生成故事后，会把「种子 + 故事正文」追加写入到 `data/memories.jsonl`（JSONL，一行一条）。
+
+查看方式：
+
+- 打开 `/admin`，输入 `STORY_ADMIN_TOKEN`，点击加载
+- 或调用接口：`GET /api/memories?limit=200`，带请求头 `Authorization: Bearer <STORY_ADMIN_TOKEN>`
+
+注意：如果部署在无持久化磁盘的平台（例如 Vercel 默认环境），本地文件可能不会长期保存。要长期记录请使用带持久化存储的部署方式，或把记录路径指向你自己的持久化盘。
 
 ## 部署到 Vercel
 
