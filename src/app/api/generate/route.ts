@@ -52,6 +52,7 @@ export async function POST(req: Request) {
       "你是一个给5岁儿童讲故事的讲述者。",
       "输入是小朋友随便敲键盘得到的乱码/随机文字/表情。",
       "请把这些字符当作“种子”，联想到形象与情节，编一个非常温柔、非常安全的儿童故事。",
+      "只输出故事正文，不要输出任何分析、推理过程或步骤。",
       "要求：",
       "- 中文输出；",
       "- 6~10句，短句为主；",
@@ -70,7 +71,8 @@ export async function POST(req: Request) {
       ],
       temperature: 0.9,
       top_p: 0.9,
-      max_tokens: 600,
+      max_tokens: 1000,
+      thinking: { type: "disabled" },
     });
     requestId = chatReqId ?? requestId;
 

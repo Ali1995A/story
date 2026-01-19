@@ -10,6 +10,7 @@ export type ZhipuChatOptions = {
   temperature?: number;
   top_p?: number;
   max_tokens?: number;
+  thinking?: { type: "disabled" | "enabled" };
 };
 
 export async function zhipuChatCompletions(opts: ZhipuChatOptions) {
@@ -25,6 +26,7 @@ export async function zhipuChatCompletions(opts: ZhipuChatOptions) {
       temperature: opts.temperature ?? 0.9,
       top_p: opts.top_p ?? 0.9,
       max_tokens: opts.max_tokens ?? 600,
+      ...(opts.thinking ? { thinking: opts.thinking } : {}),
     }),
   });
 
