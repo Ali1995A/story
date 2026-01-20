@@ -118,6 +118,7 @@ export default function StoryToy() {
   const [error, setError] = useState<string>("");
   const [playing, setPlaying] = useState(false);
   const [showText, setShowText] = useState(false);
+  const [busySeconds, setBusySeconds] = useState(0);
   const [conversationId, setConversationId] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
@@ -135,6 +136,7 @@ export default function StoryToy() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   const abortRecordingRef = useRef(false);
+  const wakeLockRef = useRef<unknown>(null);
 
   const canGenerate = useMemo(() => seed.trim().length > 0 && !busy, [seed, busy]);
 
@@ -172,6 +174,48 @@ export default function StoryToy() {
       if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setBusySeconds(0);
+    if (!busy) return;
+
+    const id = window.setInterval(() => {
+      setBusySeconds((s) => s + 1);
+    }, 1000);
+
+    const AnyNavigator = navigator as unknown as {
+      wakeLock?: { request: (type: "screen") => Promise<unknown> };
+    };
+    AnyNavigator.wakeLock
+      ?.request("screen")
+      .then((sentinel) => {
+        wakeLockRef.current = sentinel;
+      })
+      .catch(() => {
+        // ignore (unsupported or denied)
+      });
+
+    return () => {
+      window.clearInterval(id);
+      const sentinel = wakeLockRef.current as { release?: () => Promise<void> } | null;
+      wakeLockRef.current = null;
+      sentinel?.release?.().catch(() => {
+        // ignore
+      });
+    };
+  }, [busy]);
+
+  useEffect(() => {
+    const shouldWarn = busy || chatBusy || recording;
+    if (!shouldWarn) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [busy, chatBusy, recording]);
 
   useEffect(() => {
     chatMessagesRef.current = chatMessages;
@@ -250,6 +294,7 @@ export default function StoryToy() {
 
     stopRecordingNow();
     setBusy(true);
+    setBusySeconds(0);
     setError("");
     if (!hasUserToggledShowTextRef.current) setShowText(shouldDefaultShowText());
     setPlaying(false);
@@ -473,13 +518,41 @@ export default function StoryToy() {
     <div className="app-shell relative flex items-stretch justify-center overflow-hidden bg-[radial-gradient(1200px_700px_at_30%_10%,rgba(255,90,165,0.40),transparent_60%),radial-gradient(900px_600px_at_70%_25%,rgba(124,92,255,0.22),transparent_60%),linear-gradient(180deg,#fff6fb,#ffe7f3_55%,#fff6fb)] px-[max(16px,env(safe-area-inset-left))] py-[max(16px,env(safe-area-inset-top))] md:px-[max(32px,env(safe-area-inset-left))] md:py-[max(28px,env(safe-area-inset-top))]">
       <div className="pointer-events-none absolute -top-24 left-1/2 h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,90,165,0.50),transparent_60%)] blur-2xl" />
       <main className="relative w-full max-w-none pb-[max(18px,env(safe-area-inset-bottom))] xl:max-w-[1400px] 2xl:max-w-[1600px]">
+        {busy ? (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-6">
+            <div className="absolute inset-0 bg-white/55 backdrop-blur-sm" />
+            <div className="relative w-full max-w-[560px] rounded-3xl border border-black/10 bg-white/80 p-6 text-center shadow-[0_22px_60px_rgba(0,0,0,0.12)]">
+              <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-[linear-gradient(135deg,var(--pink-500),var(--lav-500))] text-3xl text-white shadow-[0_14px_30px_rgba(255,63,150,0.28)]">
+                ✨
+              </div>
+              <div className="mt-4 text-lg font-semibold text-black/80">
+                正在变魔法…
+              </div>
+              <div className="mt-2 text-sm text-black/60">
+                {busySeconds < 6
+                  ? "海皮老师在编故事"
+                  : busySeconds < 14
+                    ? "马上就好，别关页面哦"
+                    : "如果网慢会久一点点，我们一起等一下下"}
+              </div>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-500)] [animation-delay:0ms]" />
+                <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--lav-500)] [animation-delay:150ms]" />
+                <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-400)] [animation-delay:300ms]" />
+              </div>
+              <div className="mt-5 text-xs text-black/50">
+                请不要关闭或切换页面
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] md:gap-6 lg:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:gap-8">
           <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur md:flex md:flex-col md:p-6 lg:p-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--pink-400),var(--lav-500))] text-white shadow-[0_10px_25px_rgba(255,90,165,0.25)]">
-                <SparkleIcon />
-              </div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--pink-400),var(--lav-500))] text-white shadow-[0_10px_25px_rgba(255,90,165,0.25)]">
+                  <SparkleIcon />
+                </div>
               <div className="flex flex-col">
                 <div className="text-base font-semibold tracking-tight">
                   粉粉故事机
