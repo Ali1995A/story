@@ -296,6 +296,8 @@ export default function StoryToy() {
   const pendingSpeakTextRef = useRef<string>("");
   const hasPromptedMicRef = useRef(false);
   const speakOnGestureArmedRef = useRef(false);
+  const pendingChatSpeakTextRef = useRef<string>("");
+  const chatSpeakOnGestureArmedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -459,6 +461,20 @@ export default function StoryToy() {
     window.addEventListener("pointerdown", handler, { once: true, capture: true });
   };
 
+  const scheduleChatSpeakOnNextGesture = () => {
+    if (!canSystemSpeak) return;
+    if (chatSpeakOnGestureArmedRef.current) return;
+    if (!pendingChatSpeakTextRef.current.trim()) return;
+    chatSpeakOnGestureArmedRef.current = true;
+    const handler = () => {
+      chatSpeakOnGestureArmedRef.current = false;
+      const text = pendingChatSpeakTextRef.current.trim();
+      if (!text) return;
+      void speakChatWithSystem(text);
+    };
+    window.addEventListener("pointerdown", handler, { once: true, capture: true });
+  };
+
   const speakWithSystem = async (text: string) => {
     if (!canSystemSpeak) return false;
     const t = text.trim();
@@ -482,6 +498,32 @@ export default function StoryToy() {
       setPlaying(false);
       pendingSpeakTextRef.current = t;
       scheduleSpeakOnNextGesture();
+      return false;
+    }
+  };
+
+  const speakChatWithSystem = async (text: string) => {
+    if (!canSystemSpeak) return false;
+    const t = text.trim();
+    if (!t) return false;
+    void unlockAudioForIOS();
+    stopSystemSpeak();
+    pendingChatSpeakTextRef.current = "";
+    const utterance = new SpeechSynthesisUtterance(t);
+    utterance.lang = "zh-CN";
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onstart = () => setChatPhase("speaking");
+    utterance.onend = () => setChatPhase("idle");
+    utterance.onerror = () => setChatPhase("idle");
+    systemUtteranceRef.current = utterance;
+    try {
+      window.speechSynthesis.speak(utterance);
+      return true;
+    } catch {
+      pendingChatSpeakTextRef.current = t;
+      scheduleChatSpeakOnNextGesture();
       return false;
     }
   };
@@ -723,6 +765,17 @@ export default function StoryToy() {
     if (recording || chatBusy) return;
     setChatError("");
     try {
+      // Prime audio permissions within the user gesture (iOS Safari).
+      await primeAudioElementForIOS(chatAudioRef.current);
+      void unlockAudioForIOS();
+      if (canSystemSpeak) {
+        try {
+          window.speechSynthesis.getVoices();
+        } catch {
+          // ignore
+        }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       recordedChunksRef.current = [];
@@ -781,14 +834,15 @@ export default function StoryToy() {
     const url = base64ToObjectUrl(base64, mime || "audio/wav");
     if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
     chatCleanupUrlRef.current = url;
-    if (!chatAudioRef.current) return;
+    if (!chatAudioRef.current) return false;
     chatAudioRef.current.src = url;
     chatAudioRef.current.load();
     try {
       await unlockAudioForIOS();
       await chatAudioRef.current.play();
+      return true;
     } catch {
-      // ignore
+      return false;
     }
   };
 
@@ -836,13 +890,28 @@ export default function StoryToy() {
       setConversationId(data.conversationId);
       setChatMessages((prev) => [...prev, { role: "assistant", content: data.assistantText }]);
       if (data.assistantAudioBase64 && data.assistantAudioMime) {
-        await playChatAudio(data.assistantAudioBase64, data.assistantAudioMime);
+        const ok = await playChatAudio(data.assistantAudioBase64, data.assistantAudioMime);
+        if (!ok) {
+          pendingChatSpeakTextRef.current = data.assistantText;
+          const spoke = await speakChatWithSystem(data.assistantText);
+          if (!spoke) {
+            scheduleChatSpeakOnNextGesture();
+            setChatError("轻点一下屏幕，海皮就开口啦～");
+          }
+        }
+      } else if (canSystemSpeak) {
+        pendingChatSpeakTextRef.current = data.assistantText;
+        const spoke = await speakChatWithSystem(data.assistantText);
+        if (!spoke) {
+          scheduleChatSpeakOnNextGesture();
+          setChatError("轻点一下屏幕，海皮就开口啦～");
+        }
       } else {
         setChatPhase("idle");
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "对话失败";
-      setChatError(msg);
+      console.warn("[/api/chat] failed", e);
+      setChatError("海皮有点慢，我们再试一次～");
       setChatPhase("idle");
     } finally {
       setChatBusy(false);
@@ -1148,7 +1217,7 @@ export default function StoryToy() {
               </div>
 
               {chatError ? (
-                <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mt-3 rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-sm text-black/70">
                   {chatError}
                 </div>
               ) : null}
