@@ -214,8 +214,17 @@ export async function POST(req: Request) {
     requestId = res.headers.get("x-request-id") ?? undefined;
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+      const snippet = text ? text.slice(0, 800) : "";
+      console.error("[/api/chat] upstream not ok", {
+        status: res.status,
+        statusText: res.statusText,
+        requestId,
+        model,
+        endpoint,
+        bodySnippet: snippet,
+      });
       throw new Error(
-        `Zhipu voice chat failed: ${res.status} ${res.statusText}${text ? ` - ${text}` : ""}`,
+        `Zhipu voice chat failed: ${res.status} ${res.statusText}${snippet ? ` - ${snippet}` : ""}`,
       );
     }
 
