@@ -150,6 +150,8 @@ export async function POST(req: Request) {
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "Server error";
+    // Helpful for Vercel function logs; do not include secrets.
+    console.error("[/api/generate] error", { message, requestId });
     return NextResponse.json<ErrResponse>(
       { ok: false, error: message, requestId },
       { status: 500, headers: { "Cache-Control": "no-store" } },

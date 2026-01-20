@@ -262,7 +262,13 @@ export default function StoryToy() {
         body: JSON.stringify({ seed }),
       });
 
-      const data = (await res.json()) as GenerateResult;
+      let data: GenerateResult;
+      const rawText = await res.text();
+      try {
+        data = JSON.parse(rawText) as GenerateResult;
+      } catch {
+        throw new Error(rawText || `请求失败：${res.status} ${res.statusText}`);
+      }
       if (!data.ok) throw new Error(data.error);
 
       setStory(data.story);
