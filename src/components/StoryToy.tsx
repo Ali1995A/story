@@ -49,7 +49,28 @@ async function blobToBase64(blob: Blob) {
   return btoa(binary);
 }
 
-function audioBufferToWavBlob(audioBuffer: AudioBuffer) {
+function resampleLinear(input: Float32Array, inRate: number, outRate: number) {
+  if (inRate === outRate) return input;
+  const ratio = outRate / inRate;
+  const outLen = Math.max(1, Math.round(input.length * ratio));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i += 1) {
+    const src = i / ratio;
+    const idx = Math.floor(src);
+    const frac = src - idx;
+    const a = input[idx] ?? input[input.length - 1] ?? 0;
+    const b = input[idx + 1] ?? a;
+    out[i] = a + (b - a) * frac;
+  }
+  return out;
+}
+
+function audioBufferToWavBlob(
+  audioBuffer: AudioBuffer,
+  opts?: { targetSampleRate?: number; maxDurationSec?: number },
+) {
+  const targetSampleRate = opts?.targetSampleRate ?? 16000;
+  const maxDurationSec = opts?.maxDurationSec ?? 8;
   const sampleRate = audioBuffer.sampleRate;
   const channelCount = audioBuffer.numberOfChannels;
   const length = audioBuffer.length;
@@ -61,10 +82,16 @@ function audioBufferToWavBlob(audioBuffer: AudioBuffer) {
     for (let i = 0; i < length; i += 1) mono[i] += data[i] / channelCount;
   }
 
+  let samples = resampleLinear(mono, sampleRate, targetSampleRate);
+  const maxSamples = Math.max(1, Math.round(targetSampleRate * maxDurationSec));
+  if (samples.length > maxSamples) {
+    samples = samples.slice(0, maxSamples);
+  }
+
   const bytesPerSample = 2;
   const blockAlign = 1 * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = length * bytesPerSample;
+  const byteRate = targetSampleRate * blockAlign;
+  const dataSize = samples.length * bytesPerSample;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
 
@@ -79,7 +106,7 @@ function audioBufferToWavBlob(audioBuffer: AudioBuffer) {
   view.setUint32(16, 16, true); // PCM
   view.setUint16(20, 1, true); // PCM
   view.setUint16(22, 1, true); // channels
-  view.setUint32(24, sampleRate, true);
+  view.setUint32(24, targetSampleRate, true);
   view.setUint32(28, byteRate, true);
   view.setUint16(32, blockAlign, true);
   view.setUint16(34, 16, true); // bits per sample
@@ -87,8 +114,8 @@ function audioBufferToWavBlob(audioBuffer: AudioBuffer) {
   view.setUint32(40, dataSize, true);
 
   let offset = 44;
-  for (let i = 0; i < length; i += 1) {
-    const s = Math.max(-1, Math.min(1, mono[i]));
+  for (let i = 0; i < samples.length; i += 1) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
     view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
     offset += 2;
   }
@@ -108,7 +135,10 @@ async function audioBlobToWavBase64(blob: Blob) {
   try {
     const arrayBuf = await blob.arrayBuffer();
     const audioBuffer = await ctx.decodeAudioData(arrayBuf.slice(0));
-    const wavBlob = audioBufferToWavBlob(audioBuffer);
+    const wavBlob = audioBufferToWavBlob(audioBuffer, {
+      targetSampleRate: 16000,
+      maxDurationSec: 8,
+    });
     const base64 = await blobToBase64(wavBlob);
     return { base64, mime: "audio/wav" };
   } finally {
@@ -195,6 +225,10 @@ export default function StoryToy() {
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState("");
   const [recording, setRecording] = useState(false);
+  const [chatPhase, setChatPhase] = useState<
+    "idle" | "recording" | "encoding" | "thinking" | "speaking"
+  >("idle");
+  const [chatPhaseSeconds, setChatPhaseSeconds] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chatAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -292,6 +326,13 @@ export default function StoryToy() {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
 
+  useEffect(() => {
+    setChatPhaseSeconds(0);
+    if (chatPhase === "idle") return;
+    const id = window.setInterval(() => setChatPhaseSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [chatPhase]);
+
   const stopRecordingNow = () => {
     abortRecordingRef.current = true;
     try {
@@ -309,10 +350,12 @@ export default function StoryToy() {
     mediaRecorderRef.current = null;
     recordedChunksRef.current = [];
     setRecording(false);
+    setChatPhase("idle");
   };
 
   const stopRecordingAndSend = () => {
     abortRecordingRef.current = false;
+    setChatPhase("encoding");
     try {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -483,21 +526,29 @@ export default function StoryToy() {
 
         const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType });
         recordedChunksRef.current = [];
-        if (!blob.size || abortRecordingRef.current) return;
+        if (!blob.size || abortRecordingRef.current) {
+          setChatPhase("idle");
+          return;
+        }
         try {
+          setChatPhase("encoding");
           const wav = await audioBlobToWavBase64(blob);
+          setChatPhase("thinking");
           await sendChat({ inputAudioBase64: wav.base64, inputAudioMime: wav.mime });
         } catch (e) {
           const msg = e instanceof Error ? e.message : "语音处理失败";
           setChatError(msg);
+          setChatPhase("idle");
         }
       };
       recorder.start(250);
       setRecording(true);
+      setChatPhase("recording");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "无法使用麦克风";
       setChatError(msg);
       setRecording(false);
+      setChatPhase("idle");
       try {
         streamRef.current?.getTracks().forEach((t) => t.stop());
       } catch {
@@ -531,6 +582,7 @@ export default function StoryToy() {
 
     setChatBusy(true);
     setChatError("");
+    setChatPhase("thinking");
 
     if (inputText) {
       setChatMessages((prev) => [...prev, { role: "user", content: inputText }]);
@@ -566,10 +618,13 @@ export default function StoryToy() {
       setChatMessages((prev) => [...prev, { role: "assistant", content: data.assistantText }]);
       if (data.assistantAudioBase64 && data.assistantAudioMime) {
         await playChatAudio(data.assistantAudioBase64, data.assistantAudioMime);
+      } else {
+        setChatPhase("idle");
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "对话失败";
       setChatError(msg);
+      setChatPhase("idle");
     } finally {
       setChatBusy(false);
     }
@@ -831,14 +886,22 @@ export default function StoryToy() {
                   海皮老师聊一聊
                 </div>
                 <div className="text-xs text-black/45">
-                  {chatBusy ? "思考中…" : recording ? "录音中…" : ""}
+                  {chatPhase === "recording"
+                    ? "录音中…"
+                    : chatPhase === "encoding"
+                      ? "整理声音中…"
+                      : chatPhase === "thinking"
+                        ? "海皮在想…"
+                        : chatPhase === "speaking"
+                          ? "海皮在说话…"
+                          : ""}
                 </div>
               </div>
 
               <div className="mt-3 max-h-[38vh] space-y-2 overflow-auto rounded-2xl border border-black/5 bg-white/70 p-3">
                 {chatMessages.length === 0 ? (
                   <div className="text-sm text-black/55">
-                    你可以按下麦克风说话，或者打字问海皮老师关于这个故事的问题。
+                    按住下面按钮说话，松开就发给海皮老师。
                   </div>
                 ) : null}
 
@@ -862,6 +925,30 @@ export default function StoryToy() {
               {chatError ? (
                 <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {chatError}
+                </div>
+              ) : null}
+
+              {chatPhase === "encoding" || chatPhase === "thinking" ? (
+                <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-black/70">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {chatPhase === "encoding"
+                        ? "我在把声音变得清清楚楚…"
+                        : chatPhaseSeconds < 6
+                          ? "海皮在想一个好玩的问题…"
+                          : chatPhaseSeconds < 14
+                            ? "马上就好，先别走开哦…"
+                            : "网慢会久一点点，我们一起数数：1、2、3…"}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-500)] [animation-delay:0ms]" />
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--lav-500)] [animation-delay:150ms]" />
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-400)] [animation-delay:300ms]" />
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-black/50">
+                    小任务：想一想，故事里你最喜欢谁？为什么？
+                  </div>
                 </div>
               ) : null}
 
@@ -908,7 +995,15 @@ export default function StoryToy() {
           className="hidden"
         />
 
-        <audio ref={chatAudioRef} playsInline preload="auto" className="hidden" />
+        <audio
+          ref={chatAudioRef}
+          playsInline
+          preload="auto"
+          className="hidden"
+          onPlay={() => setChatPhase("speaking")}
+          onEnded={() => setChatPhase("idle")}
+          onPause={() => setChatPhase("idle")}
+        />
       </main>
     </div>
   );
