@@ -298,6 +298,8 @@ export default function StoryToy() {
   const speakOnGestureArmedRef = useRef(false);
   const pendingChatSpeakTextRef = useRef<string>("");
   const chatSpeakOnGestureArmedRef = useRef(false);
+  const pendingChatPlayUrlRef = useRef<string>("");
+  const chatPlayOnGestureArmedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -322,6 +324,11 @@ export default function StoryToy() {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(min-width: 768px)").matches;
   };
+
+  const isWeChat = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return /micromessenger/i.test(navigator.userAgent);
+  }, []);
 
   useEffect(() => {
     const setAppHeight = () => {
@@ -403,6 +410,24 @@ export default function StoryToy() {
   }, [busy, chatBusy, recording]);
 
   useEffect(() => {
+    if (!isWeChat) return;
+    const handler = () => {
+      void primeAudioElementForIOS(audioRef.current);
+      void primeAudioElementForIOS(chatAudioRef.current);
+      void unlockAudioForIOS();
+      if (canSystemSpeak) {
+        try {
+          window.speechSynthesis.getVoices();
+        } catch {
+          // ignore
+        }
+      }
+    };
+    document.addEventListener("WeixinJSBridgeReady", handler);
+    return () => document.removeEventListener("WeixinJSBridgeReady", handler);
+  }, [isWeChat, canSystemSpeak]);
+
+  useEffect(() => {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
 
@@ -447,18 +472,32 @@ export default function StoryToy() {
     }
   };
 
+  const addOneTimeGestureListener = (handler: () => void) => {
+    const wrapped = () => {
+      try {
+        handler();
+      } finally {
+        window.removeEventListener("pointerdown", wrapped, true);
+        window.removeEventListener("touchstart", wrapped, true);
+        window.removeEventListener("click", wrapped, true);
+      }
+    };
+    window.addEventListener("pointerdown", wrapped, { once: true, capture: true });
+    window.addEventListener("touchstart", wrapped, { once: true, capture: true });
+    window.addEventListener("click", wrapped, { once: true, capture: true });
+  };
+
   const scheduleSpeakOnNextGesture = () => {
     if (!canSystemSpeak) return;
     if (speakOnGestureArmedRef.current) return;
     if (!pendingSpeakTextRef.current.trim()) return;
     speakOnGestureArmedRef.current = true;
-    const handler = () => {
+    addOneTimeGestureListener(() => {
       speakOnGestureArmedRef.current = false;
       const text = pendingSpeakTextRef.current.trim();
       if (!text) return;
       void speakWithSystem(text);
-    };
-    window.addEventListener("pointerdown", handler, { once: true, capture: true });
+    });
   };
 
   const scheduleChatSpeakOnNextGesture = () => {
@@ -466,13 +505,12 @@ export default function StoryToy() {
     if (chatSpeakOnGestureArmedRef.current) return;
     if (!pendingChatSpeakTextRef.current.trim()) return;
     chatSpeakOnGestureArmedRef.current = true;
-    const handler = () => {
+    addOneTimeGestureListener(() => {
       chatSpeakOnGestureArmedRef.current = false;
       const text = pendingChatSpeakTextRef.current.trim();
       if (!text) return;
       void speakChatWithSystem(text);
-    };
-    window.addEventListener("pointerdown", handler, { once: true, capture: true });
+    });
   };
 
   const speakWithSystem = async (text: string) => {
@@ -528,6 +566,41 @@ export default function StoryToy() {
     }
   };
 
+  const scheduleChatPlayOnNextGesture = () => {
+    if (chatPlayOnGestureArmedRef.current) return;
+    if (!pendingChatPlayUrlRef.current.trim()) return;
+    if (!chatAudioRef.current) return;
+    chatPlayOnGestureArmedRef.current = true;
+    addOneTimeGestureListener(() => {
+      chatPlayOnGestureArmedRef.current = false;
+      void (async () => {
+        const audio = chatAudioRef.current;
+        const url = pendingChatPlayUrlRef.current;
+        if (!audio || !url) return;
+        audio.src = url;
+        audio.load();
+        try {
+          await unlockAudioForIOS();
+          await audio.play();
+        } catch {
+          scheduleChatPlayOnNextGesture();
+        }
+      })();
+    });
+  };
+
+  const stopChatAudio = () => {
+    try {
+      chatAudioRef.current?.pause();
+      if (chatAudioRef.current) chatAudioRef.current.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    pendingChatPlayUrlRef.current = "";
+    pendingChatSpeakTextRef.current = "";
+    setChatPhase("idle");
+  };
+
   const stopRecordingNow = () => {
     abortRecordingRef.current = true;
     try {
@@ -568,6 +641,7 @@ export default function StoryToy() {
   const resetAll = () => {
     stopRecordingNow();
     stopSystemSpeak();
+    stopChatAudio();
     setSeed("");
     setStory("");
     setError("");
@@ -855,6 +929,8 @@ export default function StoryToy() {
 
     setChatBusy(true);
     setChatError("");
+    stopSystemSpeak();
+    stopChatAudio();
     setChatPhase("thinking");
 
     if (inputText) {
@@ -892,11 +968,15 @@ export default function StoryToy() {
       if (data.assistantAudioBase64 && data.assistantAudioMime) {
         const ok = await playChatAudio(data.assistantAudioBase64, data.assistantAudioMime);
         if (!ok) {
-          pendingChatSpeakTextRef.current = data.assistantText;
-          const spoke = await speakChatWithSystem(data.assistantText);
-          if (!spoke) {
-            scheduleChatSpeakOnNextGesture();
-            setChatError("轻点一下屏幕，海皮就开口啦～");
+          pendingChatPlayUrlRef.current = chatCleanupUrlRef.current;
+          scheduleChatPlayOnNextGesture();
+          setChatPhase("idle");
+          setChatError("轻点一下屏幕，海皮就开口啦～");
+
+          if (canSystemSpeak) {
+            pendingChatSpeakTextRef.current = data.assistantText;
+            const spoke = await speakChatWithSystem(data.assistantText);
+            if (!spoke) scheduleChatSpeakOnNextGesture();
           }
         }
       } else if (canSystemSpeak) {
