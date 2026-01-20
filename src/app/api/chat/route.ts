@@ -3,6 +3,7 @@ import { zhipuTts } from "@/lib/zhipu";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type ChatOk = {
   ok: true;

@@ -3,6 +3,7 @@ import { appendMemory } from "@/lib/memories";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 type OkResponse = {
   ok: true;
