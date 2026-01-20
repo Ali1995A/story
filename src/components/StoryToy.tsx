@@ -333,6 +333,11 @@ export default function StoryToy() {
     return /micromessenger/i.test(navigator.userAgent);
   }, []);
 
+  const isIOS = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return /ipad|iphone|ipod/i.test(navigator.userAgent);
+  }, []);
+
   useEffect(() => {
     const setAppHeight = () => {
       const viewport = window.visualViewport;
@@ -868,12 +873,9 @@ export default function StoryToy() {
   };
 
   const pickRecordingMime = () => {
-    const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/mp4",
-      "audio/mpeg",
-    ];
+    const candidates = isIOS || isWeChat
+      ? ["audio/mp4", "audio/mpeg", "audio/webm;codecs=opus", "audio/webm"]
+      : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mpeg"];
     for (const c of candidates) {
       try {
         if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) {
@@ -909,10 +911,21 @@ export default function StoryToy() {
       const mimeType = pickRecordingMime();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = recorder;
+      const hardStopMs = 8500;
+      const hardStopId = window.setTimeout(() => {
+        try {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            mediaRecorderRef.current.stop();
+          }
+        } catch {
+          // ignore
+        }
+      }, hardStopMs);
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
       };
       recorder.onstop = async () => {
+        window.clearTimeout(hardStopId);
         setRecording(false);
         try {
           stream.getTracks().forEach((t) => t.stop());
@@ -930,9 +943,17 @@ export default function StoryToy() {
         }
         try {
           setChatPhase("encoding");
-          const wav = await audioBlobToWavBase64(blob);
-          setChatPhase("thinking");
-          await sendChat({ inputAudioBase64: wav.base64, inputAudioMime: wav.mime });
+          try {
+            const wav = await audioBlobToWavBase64(blob);
+            setChatPhase("thinking");
+            await sendChat({ inputAudioBase64: wav.base64, inputAudioMime: wav.mime });
+          } catch {
+            // Fallback: send original recording if decoding fails (common on iOS/WeChat for some codecs).
+            const base64 = await blobToBase64(blob);
+            const mime = recorder.mimeType || blob.type || "audio/mp4";
+            setChatPhase("thinking");
+            await sendChat({ inputAudioBase64: base64, inputAudioMime: mime });
+          }
         } catch (e) {
           const msg = e instanceof Error ? e.message : "语音处理失败";
           setChatError(msg);

@@ -1,4 +1,5 @@
 import { appendMemory } from "@/lib/memories";
+import { zhipuChatCompletions } from "@/lib/zhipu";
 import { zhipuTts } from "@/lib/zhipu";
 import { NextResponse } from "next/server";
 
@@ -199,64 +200,98 @@ export async function POST(req: Request) {
       });
     }
 
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), Number(process.env.ZHIPU_VOICE_TIMEOUT_MS ?? process.env.ZHIPU_TIMEOUT_MS ?? "30000"));
-    let res: Response;
+    let textOut = "";
+    let assistantAudioBase64: string | undefined;
+    let assistantAudioMime: string | undefined;
+
     try {
-      res = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: userContent },
-          ],
-          temperature: 0.7,
-          top_p: 0.9,
-          max_tokens: 800,
-        }),
-      });
-    } finally {
-      clearTimeout(t);
-    }
-
-    requestId = res.headers.get("x-request-id") ?? undefined;
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      const snippet = text ? text.slice(0, 800) : "";
-      console.error("[/api/chat] upstream not ok", {
-        status: res.status,
-        statusText: res.statusText,
-        requestId,
-        model,
-        endpoint,
-        bodySnippet: snippet,
-      });
-      throw new Error(
-        `Zhipu voice chat failed: ${res.status} ${res.statusText}${snippet ? ` - ${snippet}` : ""}`,
+      const controller = new AbortController();
+      const t = setTimeout(
+        () => controller.abort(),
+        Number(process.env.ZHIPU_VOICE_TIMEOUT_MS ?? process.env.ZHIPU_TIMEOUT_MS ?? "30000"),
       );
+      let res: Response;
+      try {
+        res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: userContent },
+            ],
+            temperature: 0.7,
+            top_p: 0.9,
+            max_tokens: 800,
+          }),
+        });
+      } finally {
+        clearTimeout(t);
+      }
+
+      requestId = res.headers.get("x-request-id") ?? undefined;
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        const snippet = text ? text.slice(0, 800) : "";
+        console.error("[/api/chat] voice upstream not ok", {
+          status: res.status,
+          statusText: res.statusText,
+          requestId,
+          model,
+          endpoint,
+          bodySnippet: snippet,
+        });
+        throw new Error(
+          `Zhipu voice chat failed: ${res.status} ${res.statusText}${snippet ? ` - ${snippet}` : ""}`,
+        );
+      }
+
+      const json = (await res.json()) as unknown;
+      const assistantText =
+        getNestedString(json, ["choices", 0, "message", "content"]) ??
+        getNestedString(json, ["choices", 0, "delta", "content"]) ??
+        getNestedString(json, ["data", "choices", 0, "message", "content"]) ??
+        "";
+      textOut = clampText(assistantText, 800);
+      if (!textOut) throw new Error("Voice chat returned empty content");
+
+      const extracted = extractAudioFromJson(json);
+      assistantAudioBase64 = extracted.audioBase64;
+      assistantAudioMime = extracted.mime;
+    } catch (voiceErr) {
+      // Fallback path: if audio input is not accepted (common on iOS/WeChat), keep the convo alive
+      // by responding with a text-only model and then TTS.
+      console.warn("[/api/chat] voice failed, falling back to text chat", {
+        message: voiceErr instanceof Error ? voiceErr.message : String(voiceErr),
+      });
+      const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4.7";
+      const { content } = await zhipuChatCompletions({
+        apiKey,
+        model: chatModel,
+        messages: [
+          { role: "system", content: system },
+          {
+            role: "user",
+            content: `${userTextBlock}\n\n（如果孩子的语音听不清，请先温柔地请TA再说一遍。）`,
+          },
+        ],
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 600,
+        thinking: { type: "disabled" },
+        timeoutMs: Number(
+          process.env.ZHIPU_CHAT_TIMEOUT_MS ??
+            process.env.ZHIPU_TIMEOUT_MS ??
+            (process.env.VERCEL ? "9000" : "30000"),
+        ),
+      });
+      textOut = clampText(content, 800);
     }
-
-    const json = (await res.json()) as unknown;
-    const assistantText =
-      getNestedString(json, ["choices", 0, "message", "content"]) ??
-      getNestedString(json, ["choices", 0, "delta", "content"]) ??
-      getNestedString(json, ["data", "choices", 0, "message", "content"]) ??
-      "";
-
-    const textOut = clampText(assistantText, 800);
-    if (!textOut) {
-      throw new Error("Voice chat returned empty content");
-    }
-
-    const extracted = extractAudioFromJson(json);
-    let assistantAudioBase64 = extracted.audioBase64;
-    let assistantAudioMime = extracted.mime;
 
     if (!assistantAudioBase64) {
       const ttsModel = process.env.ZHIPU_TTS_MODEL?.trim();
