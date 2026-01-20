@@ -61,6 +61,11 @@ export async function POST(req: Request) {
       response_format: "wav",
       speed: 1.0,
       volume: 1.0,
+      timeoutMs: Number(
+        process.env.ZHIPU_TTS_TIMEOUT_MS ??
+          process.env.ZHIPU_TIMEOUT_MS ??
+          (process.env.VERCEL ? "9000" : "30000"),
+      ),
     });
     requestId = tts.requestId ?? requestId;
 
@@ -77,4 +82,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

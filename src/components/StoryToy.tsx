@@ -244,6 +244,7 @@ export default function StoryToy() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chatAudioRef = useRef<HTMLAudioElement | null>(null);
+  const systemUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -254,6 +255,13 @@ export default function StoryToy() {
   const chatMessagesRef = useRef<ChatMessage[]>([]);
   const abortRecordingRef = useRef(false);
   const wakeLockRef = useRef<unknown>(null);
+
+  const canSystemSpeak = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return (
+      "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined"
+    );
+  }, []);
 
   const canGenerate = useMemo(() => seed.trim().length > 0 && !busy, [seed, busy]);
 
@@ -289,8 +297,15 @@ export default function StoryToy() {
     return () => {
       if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
       if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
+      if (canSystemSpeak) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          // ignore
+        }
+      }
     };
-  }, []);
+  }, [canSystemSpeak]);
 
   useEffect(() => {
     setBusySeconds(0);
@@ -345,6 +360,40 @@ export default function StoryToy() {
     return () => window.clearInterval(id);
   }, [chatPhase]);
 
+  const stopSystemSpeak = () => {
+    if (!canSystemSpeak) return;
+    try {
+      window.speechSynthesis.cancel();
+    } catch {
+      // ignore
+    }
+    systemUtteranceRef.current = null;
+  };
+
+  const speakWithSystem = async (text: string) => {
+    if (!canSystemSpeak) return false;
+    const t = text.trim();
+    if (!t) return false;
+    await unlockAudioForIOS();
+    stopSystemSpeak();
+    const utterance = new SpeechSynthesisUtterance(t);
+    utterance.lang = "zh-CN";
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    utterance.onstart = () => setPlaying(true);
+    utterance.onend = () => setPlaying(false);
+    utterance.onerror = () => setPlaying(false);
+    systemUtteranceRef.current = utterance;
+    try {
+      window.speechSynthesis.speak(utterance);
+      return true;
+    } catch {
+      setPlaying(false);
+      return false;
+    }
+  };
+
   const stopRecordingNow = () => {
     abortRecordingRef.current = true;
     try {
@@ -384,6 +433,7 @@ export default function StoryToy() {
 
   const resetAll = () => {
     stopRecordingNow();
+    stopSystemSpeak();
     setSeed("");
     setStory("");
     setError("");
@@ -419,6 +469,7 @@ export default function StoryToy() {
     if (!canGenerate) return;
 
     stopRecordingNow();
+    stopSystemSpeak();
     setBusy(true);
     setBusySeconds(0);
     setBusyStage("story");
@@ -450,35 +501,44 @@ export default function StoryToy() {
 
       setStory(data.story);
       setBusyStage("tts");
-      const ttsRes = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ story: data.story }),
-      });
-
-      const ttsText = await ttsRes.text();
-      let ttsData: TtsResult;
       try {
-        ttsData = JSON.parse(ttsText) as TtsResult;
-      } catch {
-        throw new Error(ttsText || `语音请求失败：${ttsRes.status} ${ttsRes.statusText}`);
-      }
-      if (!ttsData.ok) throw new Error(ttsData.error);
+        const ttsRes = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ story: data.story }),
+        });
 
-      const url = base64ToObjectUrl(ttsData.audioBase64, ttsData.audioMime);
-      if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
-      cleanupUrlRef.current = url;
-      setAudioUrl(url);
-
-      if (audioRef.current) {
-        audioRef.current.src = url;
-        audioRef.current.load();
+        const ttsText = await ttsRes.text();
+        let ttsData: TtsResult;
         try {
-          await audioRef.current.play();
-          setPlaying(true);
+          ttsData = JSON.parse(ttsText) as TtsResult;
         } catch {
-          setPlaying(false);
+          throw new Error(
+            ttsText || `语音请求失败：${ttsRes.status} ${ttsRes.statusText}`,
+          );
         }
+        if (!ttsData.ok) throw new Error(ttsData.error);
+
+        const url = base64ToObjectUrl(ttsData.audioBase64, ttsData.audioMime);
+        if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
+        cleanupUrlRef.current = url;
+        setAudioUrl(url);
+
+        if (audioRef.current) {
+          audioRef.current.src = url;
+          audioRef.current.load();
+          try {
+            await audioRef.current.play();
+            setPlaying(true);
+          } catch {
+            setPlaying(false);
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "语音生成失败";
+        setAudioUrl("");
+        const spoke = await speakWithSystem(data.story);
+        setError(spoke ? `服务器语音失败，已用系统朗读：${msg}` : msg);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "生成失败";
@@ -490,17 +550,30 @@ export default function StoryToy() {
 
   const togglePlay = async () => {
     const audio = audioRef.current;
-    if (!audioUrl || !audio) return;
-
-    try {
-      if (audio.paused) {
-        await unlockAudioForIOS();
-        await audio.play();
-        setPlaying(true);
-      } else {
-        audio.pause();
+    if (audioUrl && audio) {
+      try {
+        if (audio.paused) {
+          await unlockAudioForIOS();
+          await audio.play();
+          setPlaying(true);
+        } else {
+          audio.pause();
+          setPlaying(false);
+        }
+      } catch {
         setPlaying(false);
       }
+      return;
+    }
+
+    if (!story.trim() || !canSystemSpeak) return;
+    try {
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        stopSystemSpeak();
+        setPlaying(false);
+        return;
+      }
+      await speakWithSystem(story);
     } catch {
       setPlaying(false);
     }
@@ -779,7 +852,7 @@ export default function StoryToy() {
             <button
               type="button"
               onClick={togglePlay}
-              disabled={!audioUrl}
+              disabled={!audioUrl && !(story.trim() && canSystemSpeak)}
               className="grid h-16 w-16 place-items-center rounded-3xl border border-black/5 bg-white/70 text-[color:var(--pink-600)] shadow-sm disabled:opacity-40 active:scale-[0.98] md:h-18 md:w-18 lg:h-20 lg:w-20"
               aria-label="播放或暂停"
             >
@@ -852,7 +925,7 @@ export default function StoryToy() {
               <button
                 type="button"
                 onClick={togglePlay}
-                disabled={!audioUrl}
+                disabled={!audioUrl && !(story.trim() && canSystemSpeak)}
                 className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] md:p-6 lg:p-8"
                 aria-label="听：播放或暂停"
               >
@@ -896,7 +969,7 @@ export default function StoryToy() {
               <button
                 type="button"
                 onClick={togglePlay}
-                disabled={!audioUrl}
+                disabled={!audioUrl && !(story.trim() && canSystemSpeak)}
                 className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] lg:p-6"
                 aria-label="听：播放或暂停"
               >

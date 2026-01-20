@@ -11,6 +11,7 @@ export type ZhipuChatOptions = {
   top_p?: number;
   max_tokens?: number;
   thinking?: { type: "disabled" | "enabled" };
+  timeoutMs?: number;
 };
 
 async function fetchWithTimeout(
@@ -45,7 +46,8 @@ export async function zhipuChatCompletions(opts: ZhipuChatOptions) {
         ...(opts.thinking ? { thinking: opts.thinking } : {}),
       }),
     },
-    Number(process.env.ZHIPU_TIMEOUT_MS ?? "30000"),
+    opts.timeoutMs ??
+      Number(process.env.ZHIPU_TIMEOUT_MS ?? (process.env.VERCEL ? "9000" : "30000")),
   );
 
   const requestId = res.headers.get("x-request-id") ?? undefined;
@@ -78,6 +80,7 @@ export type ZhipuTtsOptions = {
   response_format?: "wav";
   speed?: number;
   volume?: number;
+  timeoutMs?: number;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -145,7 +148,8 @@ export async function zhipuTts(opts: ZhipuTtsOptions) {
         response_format: opts.response_format ?? "wav",
       }),
     },
-    Number(process.env.ZHIPU_TIMEOUT_MS ?? "30000"),
+    opts.timeoutMs ??
+      Number(process.env.ZHIPU_TIMEOUT_MS ?? (process.env.VERCEL ? "9000" : "30000")),
   );
 
   const requestId = res.headers.get("x-request-id") ?? undefined;

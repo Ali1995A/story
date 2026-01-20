@@ -72,6 +72,11 @@ export async function POST(req: Request) {
       top_p: 0.9,
       max_tokens: 1000,
       thinking: { type: "disabled" },
+      timeoutMs: Number(
+        process.env.ZHIPU_CHAT_TIMEOUT_MS ??
+          process.env.ZHIPU_TIMEOUT_MS ??
+          (process.env.VERCEL ? "9000" : "30000"),
+      ),
     });
     requestId = chatReqId ?? requestId;
 
