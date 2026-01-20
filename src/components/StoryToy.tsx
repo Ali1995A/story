@@ -208,6 +208,9 @@ async function unlockAudioForIOS() {
   const AudioContextCtor = AnyWindow.AudioContext ?? AnyWindow.webkitAudioContext;
   if (!AudioContextCtor) return;
 
+  const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const timeoutMs = 500;
+
   try {
     const ctx = new AudioContextCtor();
     const buffer = ctx.createBuffer(1, 1, 22050);
@@ -215,8 +218,12 @@ async function unlockAudioForIOS() {
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
-    if (ctx.state === "suspended") await ctx.resume();
-    await ctx.close();
+    if (ctx.state === "suspended") {
+      await Promise.race([ctx.resume(), delay(timeoutMs)]);
+    }
+    void Promise.race([ctx.close(), delay(timeoutMs)]).catch(() => {
+      // ignore
+    });
   } catch {
     // ignore
   }
@@ -481,7 +488,7 @@ export default function StoryToy() {
     setChatError("");
     if (audioRef.current) audioRef.current.pause();
 
-    await unlockAudioForIOS();
+    void unlockAudioForIOS();
 
     try {
       const res = await fetch("/api/generate", {
