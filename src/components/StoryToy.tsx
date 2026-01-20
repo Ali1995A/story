@@ -293,6 +293,7 @@ export default function StoryToy() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chatAudioRef = useRef<HTMLAudioElement | null>(null);
   const systemUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const pendingSpeakTextRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -418,12 +419,24 @@ export default function StoryToy() {
     systemUtteranceRef.current = null;
   };
 
+  const humanizePlayError = (e: unknown) => {
+    const name =
+      e && typeof e === "object" && "name" in e ? String((e as { name?: unknown }).name) : "";
+    const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+    if (name === "NotAllowedError") return "iPad 需要你再点一下喇叭才能播放（系统限制）";
+    if (name === "AbortError" || message.toLowerCase().includes("aborted")) {
+      return "播放被中断了，请再点一次喇叭";
+    }
+    return message || "无法播放";
+  };
+
   const speakWithSystem = async (text: string) => {
     if (!canSystemSpeak) return false;
     const t = text.trim();
     if (!t) return false;
     void unlockAudioForIOS();
     stopSystemSpeak();
+    pendingSpeakTextRef.current = "";
     const utterance = new SpeechSynthesisUtterance(t);
     utterance.lang = "zh-CN";
     utterance.rate = 1;
@@ -438,6 +451,7 @@ export default function StoryToy() {
       return true;
     } catch {
       setPlaying(false);
+      pendingSpeakTextRef.current = t;
       return false;
     }
   };
@@ -589,15 +603,19 @@ export default function StoryToy() {
             setPlaying(true);
           } catch (playErr) {
             setPlaying(false);
-            const msg = playErr instanceof Error ? playErr.message : "无法自动播放";
+            const msg = humanizePlayError(playErr);
             const spoke = await speakWithSystem(data.story);
-            if (!spoke) setError(`音频已生成，但无法自动播放：${msg}`);
+            if (!spoke) {
+              pendingSpeakTextRef.current = data.story;
+              setError(`音频已生成但无法自动播放：${msg}`);
+            }
           }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "语音生成失败";
         setAudioUrl("");
         const spoke = await speakWithSystem(data.story);
+        if (!spoke) pendingSpeakTextRef.current = data.story;
         setError(spoke ? `服务器语音失败，已用系统朗读：${msg}` : msg);
       }
     } catch (e) {
@@ -623,8 +641,8 @@ export default function StoryToy() {
       } catch (e) {
         setPlaying(false);
         if (story.trim() && canSystemSpeak) {
-          const msg = e instanceof Error ? e.message : "无法播放音频";
-          const spoke = await speakWithSystem(story);
+          const msg = humanizePlayError(e);
+          const spoke = await speakWithSystem(pendingSpeakTextRef.current || story);
           if (!spoke) setError(msg);
         }
       }
@@ -638,7 +656,7 @@ export default function StoryToy() {
         setPlaying(false);
         return;
       }
-      await speakWithSystem(story);
+      await speakWithSystem(pendingSpeakTextRef.current || story);
     } catch {
       setPlaying(false);
     }
