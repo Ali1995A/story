@@ -300,6 +300,9 @@ export default function StoryToy() {
   const chatSpeakOnGestureArmedRef = useRef(false);
   const pendingChatPlayUrlRef = useRef<string>("");
   const chatPlayOnGestureArmedRef = useRef(false);
+  const keepAliveAudioCtxRef = useRef<AudioContext | null>(null);
+  const keepAliveOscRef = useRef<OscillatorNode | null>(null);
+  const keepAliveGainRef = useRef<GainNode | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -364,6 +367,19 @@ export default function StoryToy() {
           // ignore
         }
       }
+      try {
+        keepAliveOscRef.current?.stop();
+      } catch {
+        // ignore
+      }
+      keepAliveOscRef.current = null;
+      try {
+        void keepAliveAudioCtxRef.current?.close();
+      } catch {
+        // ignore
+      }
+      keepAliveAudioCtxRef.current = null;
+      keepAliveGainRef.current = null;
     };
   }, [canSystemSpeak]);
 
@@ -415,6 +431,7 @@ export default function StoryToy() {
       void primeAudioElementForIOS(audioRef.current);
       void primeAudioElementForIOS(chatAudioRef.current);
       void unlockAudioForIOS();
+      void ensureAudioSession();
       if (canSystemSpeak) {
         try {
           window.speechSynthesis.getVoices();
@@ -469,6 +486,38 @@ export default function StoryToy() {
       stream?.getTracks().forEach((t) => t.stop());
     } catch {
       // ignore
+    }
+  };
+
+  const ensureAudioSession = async () => {
+    const AnyWindow = window as unknown as {
+      AudioContext?: typeof AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const AudioContextCtor = AnyWindow.AudioContext ?? AnyWindow.webkitAudioContext;
+    if (!AudioContextCtor) return false;
+
+    let ctx = keepAliveAudioCtxRef.current;
+    try {
+      if (!ctx || ctx.state === "closed") {
+        ctx = new AudioContextCtor();
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        const osc = ctx.createOscillator();
+        osc.frequency.value = 440;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        keepAliveAudioCtxRef.current = ctx;
+        keepAliveOscRef.current = osc;
+        keepAliveGainRef.current = gain;
+      }
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      return true;
+    } catch {
+      return false;
     }
   };
 
@@ -577,6 +626,8 @@ export default function StoryToy() {
         const audio = chatAudioRef.current;
         const url = pendingChatPlayUrlRef.current;
         if (!audio || !url) return;
+        await primeAudioElementForIOS(audio);
+        await ensureAudioSession();
         audio.src = url;
         audio.load();
         try {
@@ -841,6 +892,7 @@ export default function StoryToy() {
     try {
       // Prime audio permissions within the user gesture (iOS Safari).
       await primeAudioElementForIOS(chatAudioRef.current);
+      await ensureAudioSession();
       void unlockAudioForIOS();
       if (canSystemSpeak) {
         try {
@@ -909,9 +961,12 @@ export default function StoryToy() {
     if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
     chatCleanupUrlRef.current = url;
     if (!chatAudioRef.current) return false;
+    chatAudioRef.current.muted = false;
+    chatAudioRef.current.volume = 1;
     chatAudioRef.current.src = url;
     chatAudioRef.current.load();
     try {
+      await ensureAudioSession();
       await unlockAudioForIOS();
       await chatAudioRef.current.play();
       return true;
