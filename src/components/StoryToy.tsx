@@ -419,25 +419,12 @@ export default function StoryToy() {
     systemUtteranceRef.current = null;
   };
 
-  const humanizePlayError = (e: unknown) => {
-    const name =
-      e && typeof e === "object" && "name" in e ? String((e as { name?: unknown }).name) : "";
-    const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
-    if (name === "NotAllowedError") return "iPad 需要你再点一下喇叭才能播放（系统限制）";
-    if (name === "AbortError" || message.toLowerCase().includes("aborted")) {
-      return "播放被中断了，请再点一次喇叭";
-    }
-    return message || "无法播放";
+  const friendlyGenerateFailure = () => {
+    return "小故事正在排队，等一下下～你也可以再点一次「开始」试试。";
   };
 
-  const humanizeTtsError = (e: unknown) => {
-    const name =
-      e && typeof e === "object" && "name" in e ? String((e as { name?: unknown }).name) : "";
-    const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
-    if (name === "AbortError" || message.toLowerCase().includes("aborted")) {
-      return "语音请求被中断（iPad 可能会拦截/超时），请再试一次或点喇叭朗读";
-    }
-    return message || "语音请求失败";
+  const friendlyNeedTapSpeaker = () => {
+    return "iPad 需要你点一下喇叭我才能开口哦～";
   };
 
   const speakWithSystem = async (text: string) => {
@@ -613,24 +600,24 @@ export default function StoryToy() {
             setPlaying(true);
           } catch (playErr) {
             setPlaying(false);
-            const msg = humanizePlayError(playErr);
+            console.warn("[audio.play] failed", playErr);
             const spoke = await speakWithSystem(data.story);
             if (!spoke) {
               pendingSpeakTextRef.current = data.story;
-              setError(`音频已生成但无法自动播放：${msg}`);
+              setError(friendlyNeedTapSpeaker());
             }
           }
         }
       } catch (e) {
-        const msg = humanizeTtsError(e);
+        console.warn("[/api/tts] failed", e);
         setAudioUrl("");
         const spoke = await speakWithSystem(data.story);
         if (!spoke) pendingSpeakTextRef.current = data.story;
-        setError(spoke ? `语音暂时不可用，已用系统朗读：${msg}` : msg);
+        setError(spoke ? "我先用系统声音读给你听～" : friendlyNeedTapSpeaker());
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : "生成失败";
-      setError(message);
+      console.warn("[/api/generate] failed", e);
+      setError(friendlyGenerateFailure());
     } finally {
       setBusy(false);
     }
@@ -651,9 +638,9 @@ export default function StoryToy() {
       } catch (e) {
         setPlaying(false);
         if (story.trim() && canSystemSpeak) {
-          const msg = humanizePlayError(e);
+          console.warn("[audio.play] failed (toggle)", e);
           const spoke = await speakWithSystem(pendingSpeakTextRef.current || story);
-          if (!spoke) setError(msg);
+          if (!spoke) setError(friendlyNeedTapSpeaker());
         }
       }
       return;
@@ -954,7 +941,7 @@ export default function StoryToy() {
           </div>
 
           {error ? (
-            <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mt-3 rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-sm text-black/70">
               {error}
             </div>
           ) : null}
