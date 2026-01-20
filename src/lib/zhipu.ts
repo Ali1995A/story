@@ -13,22 +13,40 @@ export type ZhipuChatOptions = {
   thinking?: { type: "disabled" | "enabled" };
 };
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function zhipuChatCompletions(opts: ZhipuChatOptions) {
-  const res = await fetch("https://open.bigmodel.cn/api/paas/v4/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      "Content-Type": "application/json",
+  const res = await fetchWithTimeout(
+    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: opts.model,
+        messages: opts.messages,
+        temperature: opts.temperature ?? 0.9,
+        top_p: opts.top_p ?? 0.9,
+        max_tokens: opts.max_tokens ?? 600,
+        ...(opts.thinking ? { thinking: opts.thinking } : {}),
+      }),
     },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: opts.messages,
-      temperature: opts.temperature ?? 0.9,
-      top_p: opts.top_p ?? 0.9,
-      max_tokens: opts.max_tokens ?? 600,
-      ...(opts.thinking ? { thinking: opts.thinking } : {}),
-    }),
-  });
+    Number(process.env.ZHIPU_TIMEOUT_MS ?? "30000"),
+  );
 
   const requestId = res.headers.get("x-request-id") ?? undefined;
   if (!res.ok) {
@@ -110,21 +128,25 @@ function extractAudioFromJson(payload: unknown): { audioBase64?: string; mime?: 
 }
 
 export async function zhipuTts(opts: ZhipuTtsOptions) {
-  const res = await fetch(opts.endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${opts.apiKey}`,
-      "Content-Type": "application/json",
+  const res = await fetchWithTimeout(
+    opts.endpoint,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: opts.model,
+        input: opts.input,
+        voice: opts.voice,
+        speed: opts.speed ?? 1.0,
+        volume: opts.volume ?? 1.0,
+        response_format: opts.response_format ?? "wav",
+      }),
     },
-    body: JSON.stringify({
-      model: opts.model,
-      input: opts.input,
-      voice: opts.voice,
-      speed: opts.speed ?? 1.0,
-      volume: opts.volume ?? 1.0,
-      response_format: opts.response_format ?? "wav",
-    }),
-  });
+    Number(process.env.ZHIPU_TIMEOUT_MS ?? "30000"),
+  );
 
   const requestId = res.headers.get("x-request-id") ?? undefined;
   if (!res.ok) {

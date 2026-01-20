@@ -35,20 +35,38 @@ function getRemoteToken() {
   return raw || undefined;
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function appendMemory(
   entry: Omit<MemoryEntry, "id" | "createdAt">,
 ) {
   const remoteBaseUrl = getRemoteBaseUrl();
   const remoteToken = getRemoteToken();
   if (remoteBaseUrl && remoteToken) {
-    const res = await fetch(`${remoteBaseUrl}/append`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${remoteToken}`,
-        "Content-Type": "application/json",
+    const res = await fetchWithTimeout(
+      `${remoteBaseUrl}/append`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${remoteToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(entry),
       },
-      body: JSON.stringify(entry),
-    });
+      Number(process.env.STORY_REMOTE_LOG_TIMEOUT_MS ?? "2000"),
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(
@@ -78,10 +96,14 @@ export async function readMemories(opts?: { limit?: number }) {
   const remoteBaseUrl = getRemoteBaseUrl();
   const remoteToken = getRemoteToken();
   if (remoteBaseUrl && remoteToken) {
-    const res = await fetch(`${remoteBaseUrl}/memories?limit=${limit}`, {
-      headers: { Authorization: `Bearer ${remoteToken}` },
-      cache: "no-store",
-    });
+    const res = await fetchWithTimeout(
+      `${remoteBaseUrl}/memories?limit=${limit}`,
+      {
+        headers: { Authorization: `Bearer ${remoteToken}` },
+        cache: "no-store",
+      },
+      Number(process.env.STORY_REMOTE_LOG_TIMEOUT_MS ?? "2000"),
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(

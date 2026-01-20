@@ -185,23 +185,31 @@ export async function POST(req: Request) {
       });
     }
 
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userContent },
-        ],
-        temperature: 0.7,
-        top_p: 0.9,
-        max_tokens: 800,
-      }),
-    });
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), Number(process.env.ZHIPU_VOICE_TIMEOUT_MS ?? process.env.ZHIPU_TIMEOUT_MS ?? "30000"));
+    let res: Response;
+    try {
+      res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: userContent },
+          ],
+          temperature: 0.7,
+          top_p: 0.9,
+          max_tokens: 800,
+        }),
+      });
+    } finally {
+      clearTimeout(t);
+    }
 
     requestId = res.headers.get("x-request-id") ?? undefined;
     if (!res.ok) {
