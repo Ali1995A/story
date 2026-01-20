@@ -294,6 +294,8 @@ export default function StoryToy() {
   const chatAudioRef = useRef<HTMLAudioElement | null>(null);
   const systemUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const pendingSpeakTextRef = useRef<string>("");
+  const hasPromptedMicRef = useRef(false);
+  const speakOnGestureArmedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -427,6 +429,36 @@ export default function StoryToy() {
     return "iPad 需要你点一下喇叭我才能开口哦～";
   };
 
+  const requestMicPermissionOnce = async () => {
+    if (hasPromptedMicRef.current) return;
+    hasPromptedMicRef.current = true;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    try {
+      const stream = (await Promise.race([
+        navigator.mediaDevices.getUserMedia({ audio: true }),
+        delay(1500).then(() => null),
+      ])) as MediaStream | null;
+      stream?.getTracks().forEach((t) => t.stop());
+    } catch {
+      // ignore
+    }
+  };
+
+  const scheduleSpeakOnNextGesture = () => {
+    if (!canSystemSpeak) return;
+    if (speakOnGestureArmedRef.current) return;
+    if (!pendingSpeakTextRef.current.trim()) return;
+    speakOnGestureArmedRef.current = true;
+    const handler = () => {
+      speakOnGestureArmedRef.current = false;
+      const text = pendingSpeakTextRef.current.trim();
+      if (!text) return;
+      void speakWithSystem(text);
+    };
+    window.addEventListener("pointerdown", handler, { once: true, capture: true });
+  };
+
   const speakWithSystem = async (text: string) => {
     if (!canSystemSpeak) return false;
     const t = text.trim();
@@ -449,6 +481,7 @@ export default function StoryToy() {
     } catch {
       setPlaying(false);
       pendingSpeakTextRef.current = t;
+      scheduleSpeakOnNextGesture();
       return false;
     }
   };
@@ -541,6 +574,7 @@ export default function StoryToy() {
     if (audioRef.current) audioRef.current.pause();
 
     // Prime audio permissions within the user gesture (iOS Safari).
+    void requestMicPermissionOnce();
     await primeAudioElementForIOS(audioRef.current);
     void unlockAudioForIOS();
     if (canSystemSpeak) {
@@ -604,6 +638,7 @@ export default function StoryToy() {
             const spoke = await speakWithSystem(data.story);
             if (!spoke) {
               pendingSpeakTextRef.current = data.story;
+              scheduleSpeakOnNextGesture();
               setError(friendlyNeedTapSpeaker());
             }
           }
@@ -612,7 +647,10 @@ export default function StoryToy() {
         console.warn("[/api/tts] failed", e);
         setAudioUrl("");
         const spoke = await speakWithSystem(data.story);
-        if (!spoke) pendingSpeakTextRef.current = data.story;
+        if (!spoke) {
+          pendingSpeakTextRef.current = data.story;
+          scheduleSpeakOnNextGesture();
+        }
         setError(spoke ? "我先用系统声音读给你听～" : friendlyNeedTapSpeaker());
       }
     } catch (e) {
@@ -640,7 +678,10 @@ export default function StoryToy() {
         if (story.trim() && canSystemSpeak) {
           console.warn("[audio.play] failed (toggle)", e);
           const spoke = await speakWithSystem(pendingSpeakTextRef.current || story);
-          if (!spoke) setError(friendlyNeedTapSpeaker());
+          if (!spoke) {
+            scheduleSpeakOnNextGesture();
+            setError(friendlyNeedTapSpeaker());
+          }
         }
       }
       return;
