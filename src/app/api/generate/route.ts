@@ -1,4 +1,4 @@
-import { zhipuChatCompletions, zhipuTts } from "@/lib/zhipu";
+import { zhipuChatCompletions } from "@/lib/zhipu";
 import { appendMemory } from "@/lib/memories";
 import { NextResponse } from "next/server";
 
@@ -8,8 +8,6 @@ export const maxDuration = 60;
 type OkResponse = {
   ok: true;
   story: string;
-  audioBase64?: string;
-  audioMime?: string;
   requestId?: string;
 };
 
@@ -32,16 +30,11 @@ export async function POST(req: Request) {
   let requestId: string | undefined;
   let seedForLog = "";
   let storyForLog = "";
-  let hasAudioForLog = false;
 
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
     const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4.7";
-    const ttsModel = process.env.ZHIPU_TTS_MODEL?.trim();
-    const ttsEndpoint =
-      process.env.ZHIPU_TTS_ENDPOINT?.trim() ||
-      "https://open.bigmodel.cn/api/paas/v4/audio/speech";
-    const ttsVoice = process.env.ZHIPU_TTS_VOICE?.trim() || undefined;
+    // TTS is handled by /api/tts to avoid long single requests on serverless.
 
     const body = (await req.json().catch(() => ({}))) as { seed?: unknown };
     const seedRaw = typeof body.seed === "string" ? body.seed : "";
@@ -86,52 +79,13 @@ export async function POST(req: Request) {
     storyForLog = story;
     const ipFromHeaders =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
-    if (!ttsModel) {
-      try {
-        await appendMemory({
-          kind: "story",
-          seed: seedForLog,
-          story: storyForLog,
-          requestId,
-          hasAudio: false,
-          userAgent: req.headers.get("user-agent") ?? undefined,
-          ip: ipFromHeaders,
-        });
-      } catch {
-        // ignore logging failures
-      }
-      return NextResponse.json<OkResponse>(
-        {
-          ok: true,
-          story,
-          requestId,
-        },
-        {
-          headers: { "Cache-Control": "no-store" },
-        },
-      );
-    }
-
-    const tts = await zhipuTts({
-      apiKey,
-      endpoint: ttsEndpoint,
-      model: ttsModel,
-      input: story,
-      voice: ttsVoice,
-      response_format: "wav",
-      speed: 1.0,
-      volume: 1.0,
-    });
-    requestId = tts.requestId ?? requestId;
-    hasAudioForLog = Boolean(tts.audioBase64);
-
     try {
       await appendMemory({
         kind: "story",
         seed: seedForLog,
         story: storyForLog,
         requestId,
-        hasAudio: hasAudioForLog,
+        hasAudio: false,
         userAgent: req.headers.get("user-agent") ?? undefined,
         ip: ipFromHeaders,
       });
@@ -143,8 +97,6 @@ export async function POST(req: Request) {
       {
         ok: true,
         story,
-        audioBase64: tts.audioBase64,
-        audioMime: tts.audioMime,
         requestId,
       },
       { headers: { "Cache-Control": "no-store" } },

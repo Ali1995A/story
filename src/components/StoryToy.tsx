@@ -6,8 +6,19 @@ type GenerateResult =
   | {
       ok: true;
       story: string;
-      audioBase64?: string;
-      audioMime?: string;
+      requestId?: string;
+    }
+  | {
+      ok: false;
+      error: string;
+      requestId?: string;
+    };
+
+type TtsResult =
+  | {
+      ok: true;
+      audioBase64: string;
+      audioMime: string;
       requestId?: string;
     }
   | {
@@ -220,6 +231,7 @@ export default function StoryToy() {
   const [playing, setPlaying] = useState(false);
   const [showText, setShowText] = useState(false);
   const [busySeconds, setBusySeconds] = useState(0);
+  const [busyStage, setBusyStage] = useState<"story" | "tts">("story");
   const [conversationId, setConversationId] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
@@ -409,6 +421,7 @@ export default function StoryToy() {
     stopRecordingNow();
     setBusy(true);
     setBusySeconds(0);
+    setBusyStage("story");
     setError("");
     if (!hasUserToggledShowTextRef.current) setShowText(shouldDefaultShowText());
     setPlaying(false);
@@ -436,24 +449,36 @@ export default function StoryToy() {
       if (!data.ok) throw new Error(data.error);
 
       setStory(data.story);
-      if (data.audioBase64 && data.audioMime) {
-        const url = base64ToObjectUrl(data.audioBase64, data.audioMime);
-        if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
-        cleanupUrlRef.current = url;
-        setAudioUrl(url);
+      setBusyStage("tts");
+      const ttsRes = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ story: data.story }),
+      });
 
-        if (audioRef.current) {
-          audioRef.current.src = url;
-          audioRef.current.load();
-          try {
-            await audioRef.current.play();
-            setPlaying(true);
-          } catch {
-            setPlaying(false);
-          }
+      const ttsText = await ttsRes.text();
+      let ttsData: TtsResult;
+      try {
+        ttsData = JSON.parse(ttsText) as TtsResult;
+      } catch {
+        throw new Error(ttsText || `语音请求失败：${ttsRes.status} ${ttsRes.statusText}`);
+      }
+      if (!ttsData.ok) throw new Error(ttsData.error);
+
+      const url = base64ToObjectUrl(ttsData.audioBase64, ttsData.audioMime);
+      if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
+      cleanupUrlRef.current = url;
+      setAudioUrl(url);
+
+      if (audioRef.current) {
+        audioRef.current.src = url;
+        audioRef.current.load();
+        try {
+          await audioRef.current.play();
+          setPlaying(true);
+        } catch {
+          setPlaying(false);
         }
-      } else {
-        setError("已生成故事文字，但没有拿到语音（检查 ZHIPU_TTS_MODEL / ZHIPU_TTS_ENDPOINT）");
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "生成失败";
@@ -660,11 +685,17 @@ export default function StoryToy() {
                 正在变魔法…
               </div>
               <div className="mt-2 text-sm text-black/60">
-                {busySeconds < 6
-                  ? "海皮老师在编故事"
-                  : busySeconds < 14
-                    ? "马上就好，别关页面哦"
-                    : "如果网慢会久一点点，我们一起等一下下"}
+                {busyStage === "story"
+                  ? busySeconds < 6
+                    ? "海皮老师在编故事"
+                    : busySeconds < 14
+                      ? "故事快写好啦，别关页面哦"
+                      : "故事有点长，我们一起等一下下"
+                  : busySeconds < 6
+                    ? "正在把故事变成声音"
+                    : busySeconds < 14
+                      ? "声音马上就来啦，别关页面哦"
+                      : "网慢会久一点点，我们一起等一下下"}
               </div>
               <div className="mt-4 flex items-center justify-center gap-2">
                 <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-500)] [animation-delay:0ms]" />
