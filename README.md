@@ -6,10 +6,14 @@
 
 - 一个大输入框：随便敲（乱码/随机字/表情都可以）
 - 一键生成：用智谱（Zhipu）LLM 组织成短故事
-- 语音播放：将故事转成音频并播放
+- 语音播放：将故事转成音频并播放（为避免 Vercel 超时，故事生成与 TTS 拆分为两个接口）
 - 听完可继续聊：围绕故事进行多轮语音/文字对话（“海皮老师”风格）
 - 成长记录：保存每次故事与对话内容，便于回看与导出
 - 兼容优先：第一代 iPad Pro / iOS Safari / 微信内置浏览器（音频需用户点击触发）
+
+## 在线地址
+
+- `https://story.cciscc.cc/`
 
 ## 本地运行
 
@@ -27,7 +31,7 @@ npm run dev
 
 - `ZHIPU_API_KEY`：智谱 API Key
 - `ZHIPU_CHAT_MODEL`：生成故事的模型（默认 `glm-4.7`）
-- `ZHIPU_TTS_MODEL`：TTS 模型（不填则只返回文字，不会有语音；推荐 `glm-tts`）
+- `ZHIPU_TTS_MODEL`：TTS 模型（不填则禁用语音合成；推荐 `glm-tts`）
 - `ZHIPU_TTS_ENDPOINT`：TTS 接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/audio/speech`）
 - `ZHIPU_TTS_VOICE`：可选，音色/发音人（不填/留空表示使用默认音色）
 - `ZHIPU_VOICE_MODEL`：可选，语音对话模型（默认 `glm-4-voice`）
@@ -59,12 +63,12 @@ Vercel 配置提示：
 
 ## 海皮老师语音对话
 
-生成故事后，右侧会出现「海皮老师聊一聊」：
+生成故事后，右侧会出现「按住对海皮说话」按钮：
 
-- 支持麦克风语音输入（需要浏览器/微信授权麦克风权限）
-- 也支持打字输入（当语音不可用或听不清时）
+- 按住说话（录音），松开后发送，海皮开始“思考 → 开口说话”
+- 支持麦克风语音输入（需要浏览器/微信授权麦克风权限；微信内置浏览器也可用）
 - 对话会围绕刚生成的故事，逐步引导孩子思考与小科普
-- 返回语音优先使用语音对话模型输出；若模型仅返回文字，会用 `glm-tts` 兜底合成语音
+- 为兼容接口要求，录音会在浏览器侧转为 WAV（单声道 / 16kHz / 最长 8 秒）再上传
 
 ## 部署到 Vercel
 
@@ -88,6 +92,15 @@ git push -u origin main
 
 - UI：`src/components/StoryToy.tsx`
 - 语音对话接口：`src/app/api/chat/route.ts`
-- 接口：`src/app/api/generate/route.ts`
+- 生成故事接口：`src/app/api/generate/route.ts`
+- TTS 接口：`src/app/api/tts/route.ts`
 - 成长记录接口：`src/app/api/memories/route.ts`
+- 健康检查：`src/app/api/health/route.ts`
 - 智谱封装：`src/lib/zhipu.ts`
+
+## 接口说明（给排查用）
+
+- `POST /api/generate`：只生成故事文字（不做 TTS）
+- `POST /api/tts`：把故事文字合成语音
+- `POST /api/chat`：围绕故事做语音多轮对话
+- `GET /api/health?token=<STORY_ADMIN_TOKEN>`：查看线上环境变量缺失情况 + 远端存储健康状态（不会返回密钥本身）
