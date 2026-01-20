@@ -120,7 +120,6 @@ export default function StoryToy() {
   const [showText, setShowText] = useState(false);
   const [conversationId, setConversationId] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState("");
   const [recording, setRecording] = useState(false);
@@ -135,12 +134,9 @@ export default function StoryToy() {
   const streamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
+  const abortRecordingRef = useRef(false);
 
   const canGenerate = useMemo(() => seed.trim().length > 0 && !busy, [seed, busy]);
-  const canSendChat = useMemo(
-    () => story.trim().length > 0 && chatInput.trim().length > 0 && !chatBusy,
-    [story, chatInput, chatBusy],
-  );
 
   const shouldDefaultShowText = () => {
     if (typeof window === "undefined") return false;
@@ -182,6 +178,7 @@ export default function StoryToy() {
   }, [chatMessages]);
 
   const stopRecordingNow = () => {
+    abortRecordingRef.current = true;
     try {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -197,6 +194,16 @@ export default function StoryToy() {
     mediaRecorderRef.current = null;
     recordedChunksRef.current = [];
     setRecording(false);
+  };
+
+  const stopRecordingAndSend = () => {
+    abortRecordingRef.current = false;
+    try {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    } catch {
+      // ignore
+    }
   };
 
   useEffect(() => {
@@ -215,7 +222,6 @@ export default function StoryToy() {
     setShowText(shouldDefaultShowText());
     setConversationId("");
     setChatMessages([]);
-    setChatInput("");
     setChatError("");
     setChatBusy(false);
     setRecording(false);
@@ -249,7 +255,6 @@ export default function StoryToy() {
     setPlaying(false);
     setConversationId("");
     setChatMessages([]);
-    setChatInput("");
     setChatError("");
     if (audioRef.current) audioRef.current.pause();
 
@@ -343,6 +348,7 @@ export default function StoryToy() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       recordedChunksRef.current = [];
+      abortRecordingRef.current = false;
       const mimeType = pickRecordingMime();
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = recorder;
@@ -361,7 +367,7 @@ export default function StoryToy() {
 
         const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType });
         recordedChunksRef.current = [];
-        if (!blob.size) return;
+        if (!blob.size || abortRecordingRef.current) return;
         const base64 = await blobToBase64(blob);
         await sendChat({ inputAudioBase64: base64, inputAudioMime: blob.type });
       };
@@ -710,50 +716,33 @@ export default function StoryToy() {
                 </div>
               ) : null}
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3">
                 <button
                   type="button"
-                  onClick={() => (recording ? stopRecordingNow() : startRecording())}
                   disabled={chatBusy || !navigator.mediaDevices}
-                  className="grid h-12 w-12 place-items-center rounded-2xl border border-black/10 bg-white/80 text-lg shadow-sm disabled:opacity-40 active:scale-[0.99]"
-                  aria-label={recording ? "停止录音" : "开始录音"}
-                >
-                  {recording ? "■" : "🎤"}
-                </button>
-
-                <input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (canSendChat) {
-                        const text = chatInput;
-                        setChatInput("");
-                        void sendChat({ inputText: text });
-                      }
+                  onPointerDown={(e) => {
+                    if (chatBusy) return;
+                    try {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    } catch {
+                      // ignore
                     }
+                    void startRecording();
                   }}
-                  placeholder="想问海皮老师什么？"
-                  className="h-12 w-full rounded-2xl border border-black/10 bg-white/80 px-4 text-sm outline-none md:text-base"
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-
-                <button
-                  type="button"
-                  disabled={!canSendChat}
-                  onClick={() => {
-                    const text = chatInput;
-                    setChatInput("");
-                    void sendChat({ inputText: text });
+                  onPointerUp={() => stopRecordingAndSend()}
+                  onPointerCancel={() => stopRecordingNow()}
+                  onPointerLeave={() => {
+                    if (recording) stopRecordingNow();
                   }}
-                  className="h-12 rounded-2xl bg-black px-4 text-sm font-semibold text-white disabled:opacity-40 md:text-base"
-                  aria-label="发送"
+                  onContextMenu={(e) => e.preventDefault()}
+                  className="w-full select-none rounded-3xl bg-[linear-gradient(135deg,var(--pink-500),var(--lav-500))] px-6 py-5 text-center text-base font-semibold text-white shadow-[0_14px_30px_rgba(255,63,150,0.28)] disabled:opacity-40 active:scale-[0.99] md:text-lg"
+                  aria-label="按住说话，松开发送"
                 >
-                  发送
+                  {recording ? "松开我，海皮开口" : "按住我，说给海皮听"}
                 </button>
+                <div className="mt-2 text-center text-xs text-black/50">
+                  按住说话，松开发送（需要麦克风权限）
+                </div>
               </div>
             </div>
           ) : null}
