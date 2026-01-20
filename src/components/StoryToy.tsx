@@ -426,7 +426,13 @@ export default function StoryToy() {
           inputAudioMime: inputAudioMime || undefined,
         }),
       });
-      const data = (await res.json()) as ChatResult;
+      const rawText = await res.text();
+      let data: ChatResult;
+      try {
+        data = JSON.parse(rawText) as ChatResult;
+      } catch {
+        throw new Error(rawText || `请求失败：${res.status} ${res.statusText}`);
+      }
       if (!data.ok) throw new Error(data.error);
 
       setConversationId(data.conversationId);

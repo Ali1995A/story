@@ -288,6 +288,7 @@ export async function POST(req: Request) {
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "Server error";
+    console.error("[/api/chat] error", { message, requestId });
     return NextResponse.json<ChatErr>(
       { ok: false, error: message, requestId },
       { status: 500, headers: { "Cache-Control": "no-store" } },
