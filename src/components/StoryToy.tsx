@@ -229,6 +229,47 @@ async function unlockAudioForIOS() {
   }
 }
 
+async function primeAudioElementForIOS(audio: HTMLAudioElement | null) {
+  if (!audio) return;
+  const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const timeoutMs = 800;
+
+  // A tiny silent wav. Used to satisfy iOS autoplay restrictions during a user gesture.
+  const silentWavDataUrl =
+    "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+
+  const prevSrc = audio.currentSrc || audio.src;
+  const prevMuted = audio.muted;
+  const prevVolume = audio.volume;
+
+  try {
+    audio.muted = true;
+    audio.volume = 0;
+    audio.src = silentWavDataUrl;
+    audio.load();
+    await Promise.race([audio.play(), delay(timeoutMs)]);
+  } catch {
+    // ignore
+  } finally {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    audio.muted = prevMuted;
+    audio.volume = prevVolume;
+    if (prevSrc) {
+      audio.src = prevSrc;
+      try {
+        audio.load();
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 export default function StoryToy() {
   const [seed, setSeed] = useState("");
   const [story, setStory] = useState<string>("");
@@ -381,7 +422,7 @@ export default function StoryToy() {
     if (!canSystemSpeak) return false;
     const t = text.trim();
     if (!t) return false;
-    await unlockAudioForIOS();
+    void unlockAudioForIOS();
     stopSystemSpeak();
     const utterance = new SpeechSynthesisUtterance(t);
     utterance.lang = "zh-CN";
@@ -488,7 +529,16 @@ export default function StoryToy() {
     setChatError("");
     if (audioRef.current) audioRef.current.pause();
 
+    // Prime audio permissions within the user gesture (iOS Safari).
+    await primeAudioElementForIOS(audioRef.current);
     void unlockAudioForIOS();
+    if (canSystemSpeak) {
+      try {
+        window.speechSynthesis.getVoices();
+      } catch {
+        // ignore
+      }
+    }
 
     try {
       const res = await fetch("/api/generate", {
@@ -537,8 +587,11 @@ export default function StoryToy() {
           try {
             await audioRef.current.play();
             setPlaying(true);
-          } catch {
+          } catch (playErr) {
             setPlaying(false);
+            const msg = playErr instanceof Error ? playErr.message : "无法自动播放";
+            const spoke = await speakWithSystem(data.story);
+            if (!spoke) setError(`音频已生成，但无法自动播放：${msg}`);
           }
         }
       } catch (e) {
@@ -567,8 +620,13 @@ export default function StoryToy() {
           audio.pause();
           setPlaying(false);
         }
-      } catch {
+      } catch (e) {
         setPlaying(false);
+        if (story.trim() && canSystemSpeak) {
+          const msg = e instanceof Error ? e.message : "无法播放音频";
+          const spoke = await speakWithSystem(story);
+          if (!spoke) setError(msg);
+        }
       }
       return;
     }
