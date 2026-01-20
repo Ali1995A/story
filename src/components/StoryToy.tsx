@@ -49,6 +49,77 @@ async function blobToBase64(blob: Blob) {
   return btoa(binary);
 }
 
+function audioBufferToWavBlob(audioBuffer: AudioBuffer) {
+  const sampleRate = audioBuffer.sampleRate;
+  const channelCount = audioBuffer.numberOfChannels;
+  const length = audioBuffer.length;
+
+  // Downmix to mono to reduce size.
+  const mono = new Float32Array(length);
+  for (let ch = 0; ch < channelCount; ch += 1) {
+    const data = audioBuffer.getChannelData(ch);
+    for (let i = 0; i < length; i += 1) mono[i] += data[i] / channelCount;
+  }
+
+  const bytesPerSample = 2;
+  const blockAlign = 1 * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i += 1) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true); // PCM
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // channels
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, "data");
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < length; i += 1) {
+    const s = Math.max(-1, Math.min(1, mono[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+async function audioBlobToWavBase64(blob: Blob) {
+  const AnyWindow = window as unknown as {
+    AudioContext?: typeof AudioContext;
+    webkitAudioContext?: typeof AudioContext;
+  };
+  const AudioContextCtor = AnyWindow.AudioContext ?? AnyWindow.webkitAudioContext;
+  if (!AudioContextCtor) throw new Error("当前浏览器不支持音频处理");
+
+  const ctx = new AudioContextCtor();
+  try {
+    const arrayBuf = await blob.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuf.slice(0));
+    const wavBlob = audioBufferToWavBlob(audioBuffer);
+    const base64 = await blobToBase64(wavBlob);
+    return { base64, mime: "audio/wav" };
+  } finally {
+    try {
+      await ctx.close();
+    } catch {
+      // ignore
+    }
+  }
+}
+
 function SparkleIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="h-7 w-7">
@@ -413,8 +484,13 @@ export default function StoryToy() {
         const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType });
         recordedChunksRef.current = [];
         if (!blob.size || abortRecordingRef.current) return;
-        const base64 = await blobToBase64(blob);
-        await sendChat({ inputAudioBase64: base64, inputAudioMime: blob.type });
+        try {
+          const wav = await audioBlobToWavBase64(blob);
+          await sendChat({ inputAudioBase64: wav.base64, inputAudioMime: wav.mime });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "语音处理失败";
+          setChatError(msg);
+        }
       };
       recorder.start(250);
       setRecording(true);
