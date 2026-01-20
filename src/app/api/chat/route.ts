@@ -80,6 +80,18 @@ function extractAudioFromJson(payload: unknown): { audioBase64?: string; mime?: 
   return { audioBase64, mime };
 }
 
+function audioFormatFromMime(mime: string) {
+  const m = mime.toLowerCase().split(";")[0]?.trim();
+  if (!m) return "wav";
+  if (m.includes("webm")) return "webm";
+  if (m.includes("mp4")) return "mp4";
+  if (m.includes("wav")) return "wav";
+  if (m.includes("mpeg") || m.includes("mp3")) return "mp3";
+  if (m.includes("ogg")) return "ogg";
+  if (m.includes("aac")) return "aac";
+  return "wav";
+}
+
 function buildSystemPrompt() {
   return [
     "你是“海皮”，一名非常有耐心的幼儿园老师，正在和一个5岁孩子语音聊天。",
@@ -180,6 +192,7 @@ export async function POST(req: Request) {
         type: "input_audio",
         input_audio: {
           data: inputAudioBase64,
+          format: audioFormatFromMime(inputAudioMime),
           mime: inputAudioMime || undefined,
         },
       });
