@@ -26,6 +26,32 @@ function clampText(input: string, maxLen: number) {
   return s.length <= maxLen ? s : s.slice(0, maxLen);
 }
 
+function stableChoice(seed: string, items: string[]) {
+  let acc = 0;
+  for (let i = 0; i < seed.length; i += 1) acc = (acc + seed.charCodeAt(i)) >>> 0;
+  const idx = items.length ? acc % items.length : 0;
+  return items[idx] ?? "";
+}
+
+function rewriteTemplateEnding(story: string, seed: string) {
+  const s = story.replace(/\s+$/g, "");
+  const templateRe = /晚安我的宝贝[，,]\s*做一个甜甜的梦[。.!！]*$/;
+  if (!templateRe.test(s)) return story;
+
+  const without = s.replace(templateRe, "").replace(/\s+$/g, "");
+  const endings = [
+    "晚安呀，我们明天再一起玩。",
+    "轻轻抱抱你，明天见。",
+    "谢谢你听到这里，我们下次继续。",
+    "晚安，星星会帮你守护梦。",
+    "好啦，故事先藏起来，明天再打开。",
+  ];
+  const tail = stableChoice(seed, endings);
+  if (!without) return tail;
+  const joiner = /[。.!！]$/.test(without) ? "" : "。";
+  return `${without}${joiner}${tail}`;
+}
+
 export async function POST(req: Request) {
   let requestId: string | undefined;
   let seedForLog = "";
@@ -58,7 +84,7 @@ export async function POST(req: Request) {
       "- 适合朗读，语气温暖，节奏轻快；",
       "- 不能出现恐怖、暴力、血腥、成人内容；",
       "- 不要说教，不要出现“作为AI”之类的话；",
-      "- 结尾要有一句轻轻的晚安/拥抱/谢谢之类的收束。",
+      "- 结尾要温柔收束（如晚安/拥抱/谢谢），但不要固定模板句式，每次换一种说法；不要使用“晚安我的宝贝，做一个甜甜的梦”。",
     ].join("\n");
 
     const { content, requestId: chatReqId } = await zhipuChatCompletions({
@@ -80,7 +106,10 @@ export async function POST(req: Request) {
     });
     requestId = chatReqId ?? requestId;
 
-    const story = clampText(content.replace(/\r\n/g, "\n"), 700);
+    const story = rewriteTemplateEnding(
+      clampText(content.replace(/\r\n/g, "\n"), 700),
+      seed,
+    );
     storyForLog = story;
     const ipFromHeaders =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;

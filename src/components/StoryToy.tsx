@@ -430,6 +430,16 @@ export default function StoryToy() {
     return message || "无法播放";
   };
 
+  const humanizeTtsError = (e: unknown) => {
+    const name =
+      e && typeof e === "object" && "name" in e ? String((e as { name?: unknown }).name) : "";
+    const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+    if (name === "AbortError" || message.toLowerCase().includes("aborted")) {
+      return "语音请求被中断（iPad 可能会拦截/超时），请再试一次或点喇叭朗读";
+    }
+    return message || "语音请求失败";
+  };
+
   const speakWithSystem = async (text: string) => {
     if (!canSystemSpeak) return false;
     const t = text.trim();
@@ -612,11 +622,11 @@ export default function StoryToy() {
           }
         }
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "语音生成失败";
+        const msg = humanizeTtsError(e);
         setAudioUrl("");
         const spoke = await speakWithSystem(data.story);
         if (!spoke) pendingSpeakTextRef.current = data.story;
-        setError(spoke ? `服务器语音失败，已用系统朗读：${msg}` : msg);
+        setError(spoke ? `语音暂时不可用，已用系统朗读：${msg}` : msg);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "生成失败";
