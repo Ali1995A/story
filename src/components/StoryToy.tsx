@@ -60,6 +60,16 @@ async function blobToBase64(blob: Blob) {
   return btoa(binary);
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string) {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(`${label} timeout`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  });
+}
+
 function resampleLinear(input: Float32Array, inRate: number, outRate: number) {
   if (inRate === outRate) return input;
   const ratio = outRate / inRate;
@@ -144,13 +154,17 @@ async function audioBlobToWavBase64(blob: Blob) {
 
   const ctx = new AudioContextCtor();
   try {
-    const arrayBuf = await blob.arrayBuffer();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuf.slice(0));
+    const arrayBuf = await withTimeout(blob.arrayBuffer(), 3000, "audio arrayBuffer");
+    const audioBuffer = await withTimeout(
+      ctx.decodeAudioData(arrayBuf.slice(0)),
+      3500,
+      "audio decode",
+    );
     const wavBlob = audioBufferToWavBlob(audioBuffer, {
       targetSampleRate: 16000,
       maxDurationSec: 8,
     });
-    const base64 = await blobToBase64(wavBlob);
+    const base64 = await withTimeout(blobToBase64(wavBlob), 3000, "wav encode");
     return { base64, mime: "audio/wav" };
   } finally {
     try {
@@ -949,7 +963,7 @@ export default function StoryToy() {
             await sendChat({ inputAudioBase64: wav.base64, inputAudioMime: wav.mime });
           } catch {
             // Fallback: send original recording if decoding fails (common on iOS/WeChat for some codecs).
-            const base64 = await blobToBase64(blob);
+            const base64 = await withTimeout(blobToBase64(blob), 4500, "audio encode");
             const mime = recorder.mimeType || blob.type || "audio/mp4";
             setChatPhase("thinking");
             await sendChat({ inputAudioBase64: base64, inputAudioMime: mime });
@@ -1017,19 +1031,28 @@ export default function StoryToy() {
 
     try {
       const history = [...chatMessagesRef.current].slice(-10);
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversationId: conversationId || undefined,
-          seed,
-          story,
-          history,
-          inputText: inputText || undefined,
-          inputAudioBase64: inputAudioBase64 || undefined,
-          inputAudioMime: inputAudioMime || undefined,
-        }),
-      });
+      const controller = new AbortController();
+      const reqTimeoutMs = 20000;
+      const tid = window.setTimeout(() => controller.abort(), reqTimeoutMs);
+      let res: Response;
+      try {
+        res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            conversationId: conversationId || undefined,
+            seed,
+            story,
+            history,
+            inputText: inputText || undefined,
+            inputAudioBase64: inputAudioBase64 || undefined,
+            inputAudioMime: inputAudioMime || undefined,
+          }),
+        });
+      } finally {
+        window.clearTimeout(tid);
+      }
       const rawText = await res.text();
       let data: ChatResult;
       try {
