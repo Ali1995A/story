@@ -302,7 +302,6 @@ export default function StoryToy() {
   const [chatPhase, setChatPhase] = useState<
     "idle" | "recording" | "encoding" | "thinking" | "speaking"
   >("idle");
-  const [chatPhaseSeconds, setChatPhaseSeconds] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chatAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -466,13 +465,6 @@ export default function StoryToy() {
   useEffect(() => {
     chatMessagesRef.current = chatMessages;
   }, [chatMessages]);
-
-  useEffect(() => {
-    setChatPhaseSeconds(0);
-    if (chatPhase === "idle") return;
-    const id = window.setInterval(() => setChatPhaseSeconds((s) => s + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [chatPhase]);
 
   const stopSystemSpeak = () => {
     if (!canSystemSpeak) return;
@@ -693,7 +685,9 @@ export default function StoryToy() {
 
   const stopRecordingAndSend = () => {
     abortRecordingRef.current = false;
-    setChatPhase("encoding");
+    // UX: release immediately returns to idle UI; upload/processing continues in background.
+    setRecording(false);
+    setChatPhase("idle");
     try {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -1361,13 +1355,9 @@ export default function StoryToy() {
                 <div className="text-xs text-black/45">
                   {chatPhase === "recording"
                     ? "录音中…"
-                    : chatPhase === "encoding"
-                      ? "整理声音中…"
-                      : chatPhase === "thinking"
-                        ? "海皮在想…"
-                        : chatPhase === "speaking"
-                          ? "海皮在说话…"
-                          : ""}
+                    : chatPhase === "speaking"
+                      ? "海皮在说话…"
+                      : ""}
                 </div>
               </div>
 
@@ -1401,29 +1391,7 @@ export default function StoryToy() {
                 </div>
               ) : null}
 
-              {chatPhase === "encoding" || chatPhase === "thinking" ? (
-                <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-black/70">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      {chatPhase === "encoding"
-                        ? "我在把声音变得清清楚楚…"
-                        : chatPhaseSeconds < 6
-                          ? "海皮在想一个好玩的问题…"
-                          : chatPhaseSeconds < 14
-                            ? "马上就好，先别走开哦…"
-                            : "网慢会久一点点，我们一起数数：1、2、3…"}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-500)] [animation-delay:0ms]" />
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--lav-500)] [animation-delay:150ms]" />
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-400)] [animation-delay:300ms]" />
-                    </div>
-                  </div>
-                  <div className="mt-2 text-xs text-black/50">
-                    小任务：想一想，故事里你最喜欢谁？为什么？
-                  </div>
-                </div>
-              ) : null}
+              {null}
 
               <div className="mt-3">
                 <button
