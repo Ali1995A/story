@@ -317,6 +317,7 @@ export default function StoryToy() {
   const keepAliveAudioCtxRef = useRef<AudioContext | null>(null);
   const keepAliveOscRef = useRef<OscillatorNode | null>(null);
   const keepAliveGainRef = useRef<GainNode | null>(null);
+  const chatPressingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -690,7 +691,15 @@ export default function StoryToy() {
     setChatPhase("encoding");
     try {
       const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") recorder.stop();
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          // Flush final chunk ASAP for short recordings (iOS/WeChat).
+          recorder.requestData();
+        } catch {
+          // ignore
+        }
+        recorder.stop();
+      }
     } catch {
       // ignore
     }
@@ -945,9 +954,19 @@ export default function StoryToy() {
 
         const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType });
         recordedChunksRef.current = [];
-        if (!blob.size || abortRecordingRef.current) {
+        if (abortRecordingRef.current) {
           setChatSending(false);
           setChatPhase("idle");
+          return;
+        }
+        if (!blob.size) {
+          // Short press or iOS didn't flush data; still keep the conversation moving.
+          try {
+            setChatPhase("thinking");
+            await sendChat({ inputText: "（没有录到声音）" });
+          } finally {
+            setChatSending(false);
+          }
           return;
         }
         try {
@@ -971,7 +990,7 @@ export default function StoryToy() {
           setChatSending(false);
         }
       };
-      recorder.start(250);
+      recorder.start(100);
       setRecording(true);
       setChatPhase("recording");
     } catch (e) {
@@ -1421,6 +1440,7 @@ export default function StoryToy() {
                   disabled={chatBusy || chatSending || !navigator.mediaDevices}
                   onPointerDown={(e) => {
                     if (chatBusy) return;
+                    chatPressingRef.current = true;
                     try {
                       e.currentTarget.setPointerCapture(e.pointerId);
                     } catch {
@@ -1428,10 +1448,13 @@ export default function StoryToy() {
                     }
                     void startRecording();
                   }}
-                  onPointerUp={() => stopRecordingAndSend()}
-                  onPointerCancel={() => stopRecordingNow()}
-                  onPointerLeave={() => {
-                    if (recording) stopRecordingNow();
+                  onPointerUp={() => {
+                    chatPressingRef.current = false;
+                    stopRecordingAndSend();
+                  }}
+                  onPointerCancel={() => {
+                    chatPressingRef.current = false;
+                    stopRecordingNow();
                   }}
                   onContextMenu={(e) => e.preventDefault()}
                   className="w-full select-none rounded-3xl bg-[linear-gradient(135deg,var(--pink-500),var(--lav-500))] px-6 py-5 text-center text-base font-semibold text-white shadow-[0_14px_30px_rgba(255,63,150,0.28)] disabled:opacity-40 active:scale-[0.99] md:text-lg"
