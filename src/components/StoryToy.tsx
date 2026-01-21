@@ -297,6 +297,7 @@ export default function StoryToy() {
   const [conversationId, setConversationId] = useState<string>("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState("");
   const [recording, setRecording] = useState(false);
   const [chatPhase, setChatPhase] = useState<
@@ -685,9 +686,8 @@ export default function StoryToy() {
 
   const stopRecordingAndSend = () => {
     abortRecordingRef.current = false;
-    // UX: release immediately returns to idle UI; upload/processing continues in background.
-    setRecording(false);
-    setChatPhase("idle");
+    setChatSending(true);
+    setChatPhase("encoding");
     try {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -897,7 +897,7 @@ export default function StoryToy() {
   };
 
   const startRecording = async () => {
-    if (recording || chatBusy) return;
+    if (recording || chatBusy || chatSending) return;
     setChatError("");
     try {
       // Prime audio permissions within the user gesture (iOS Safari).
@@ -946,6 +946,7 @@ export default function StoryToy() {
         const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType });
         recordedChunksRef.current = [];
         if (!blob.size || abortRecordingRef.current) {
+          setChatSending(false);
           setChatPhase("idle");
           return;
         }
@@ -966,6 +967,8 @@ export default function StoryToy() {
           const msg = e instanceof Error ? e.message : "语音处理失败";
           setChatError(msg);
           setChatPhase("idle");
+        } finally {
+          setChatSending(false);
         }
       };
       recorder.start(250);
@@ -1355,6 +1358,10 @@ export default function StoryToy() {
                 <div className="text-xs text-black/45">
                   {chatPhase === "recording"
                     ? "录音中…"
+                    : chatPhase === "encoding" || chatSending
+                      ? "正在发送…"
+                      : chatPhase === "thinking" || chatBusy
+                        ? "海皮在想…"
                     : chatPhase === "speaking"
                       ? "海皮在说话…"
                       : ""}
@@ -1391,12 +1398,27 @@ export default function StoryToy() {
                 </div>
               ) : null}
 
-              {null}
+              {chatPhase === "encoding" || chatPhase === "thinking" || chatBusy || chatSending ? (
+                <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm text-black/70">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      {chatPhase === "encoding" || chatSending
+                        ? "我在把声音发给海皮…"
+                        : "海皮在想一个好玩的问题…"}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-500)] [animation-delay:0ms]" />
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--lav-500)] [animation-delay:150ms]" />
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-[color:var(--pink-400)] [animation-delay:300ms]" />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-3">
                 <button
                   type="button"
-                  disabled={chatBusy || !navigator.mediaDevices}
+                  disabled={chatBusy || chatSending || !navigator.mediaDevices}
                   onPointerDown={(e) => {
                     if (chatBusy) return;
                     try {
