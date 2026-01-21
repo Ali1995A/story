@@ -203,6 +203,10 @@ export async function POST(req: Request) {
     let textOut = "";
     let assistantAudioBase64: string | undefined;
     let assistantAudioMime: string | undefined;
+    let upstreamMode: "voice" | "chat_fallback" = "voice";
+    let voiceRequestId: string | undefined;
+    let chatRequestId: string | undefined;
+    let ttsRequestId: string | undefined;
 
     try {
       const controller = new AbortController();
@@ -234,7 +238,8 @@ export async function POST(req: Request) {
         clearTimeout(t);
       }
 
-      requestId = res.headers.get("x-request-id") ?? undefined;
+      voiceRequestId = res.headers.get("x-request-id") ?? undefined;
+      requestId = voiceRequestId ?? requestId;
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         const snippet = text ? text.slice(0, 800) : "";
@@ -264,13 +269,14 @@ export async function POST(req: Request) {
       assistantAudioBase64 = extracted.audioBase64;
       assistantAudioMime = extracted.mime;
     } catch (voiceErr) {
+      upstreamMode = "chat_fallback";
       // Fallback path: if audio input is not accepted (common on iOS/WeChat), keep the convo alive
       // by responding with a text-only model and then TTS.
       console.warn("[/api/chat] voice failed, falling back to text chat", {
         message: voiceErr instanceof Error ? voiceErr.message : String(voiceErr),
       });
       const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4.7";
-      const { content } = await zhipuChatCompletions({
+      const { content, requestId: chatReqId } = await zhipuChatCompletions({
         apiKey,
         model: chatModel,
         messages: [
@@ -290,6 +296,8 @@ export async function POST(req: Request) {
             (process.env.VERCEL ? "9000" : "30000"),
         ),
       });
+      chatRequestId = chatReqId ?? chatRequestId;
+      requestId = chatRequestId ?? requestId;
       textOut = clampText(content, 800);
     }
 
@@ -317,9 +325,18 @@ export async function POST(req: Request) {
         });
         assistantAudioBase64 = tts.audioBase64;
         assistantAudioMime = tts.audioMime;
-        requestId = tts.requestId ?? requestId;
+        ttsRequestId = tts.requestId ?? ttsRequestId;
+        requestId = ttsRequestId ?? requestId;
       }
     }
+
+    console.info("[/api/chat] upstream", {
+      upstreamMode,
+      voiceRequestId,
+      chatRequestId,
+      ttsRequestId,
+      hasAudio: Boolean(assistantAudioBase64),
+    });
 
     try {
       await appendMemory({
@@ -347,7 +364,15 @@ export async function POST(req: Request) {
         assistantAudioMime,
         requestId,
       },
-      { headers: { "Cache-Control": "no-store" } },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+          "x-haipi-upstream": upstreamMode,
+          ...(voiceRequestId ? { "x-haipi-voice-request-id": voiceRequestId } : {}),
+          ...(chatRequestId ? { "x-haipi-chat-request-id": chatRequestId } : {}),
+          ...(ttsRequestId ? { "x-haipi-tts-request-id": ttsRequestId } : {}),
+        },
+      },
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "Server error";
