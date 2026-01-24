@@ -36,7 +36,9 @@ function stableChoice(seed: string, items: string[]) {
 function sanitizeStrictStory(story: string) {
   let s = story.replace(/\s+/g, "");
   s = s.replace(/[？！]/g, "。");
-  s = s.replace(/[^\\u4e00-\\u9fff。，？！]/g, "");
+  // Keep only CJK ideographs + allowed punctuation.
+  s = s.replace(/[^\u4e00-\u9fff。，？！]/g, "");
+  // Enforce "。"-only sentence ending requirement.
   s = s.replace(/[？！]/g, "。");
 
   const sentences = s
@@ -47,6 +49,32 @@ function sanitizeStrictStory(story: string) {
 
   if (sentences.length === 0) return "";
   return `${sentences.join("。")}。`;
+}
+
+function fallbackStrictStory(seed: string) {
+  const animals = ["小兔", "小熊", "小鹿", "小猫", "小狗"];
+  const items = ["魔法叶", "小铃铛", "彩色石", "泡泡棒", "星星贴"];
+  const sounds = ["啾啾", "咕噜", "呼呼", "叮叮", "哗啦"];
+  const animal = stableChoice(seed, animals);
+  const item = stableChoice(seed.split("").reverse().join(""), items);
+  const s1 = stableChoice(`${seed}-s`, sounds);
+
+  const lines = [
+    `森林里${s1}响。`,
+    `${animal}有个小愿望。`,
+    `它想找到${item}。`,
+    `它轻轻走进树影里。`,
+    `小动物们也来帮忙。`,
+    `它们找呀找不停。`,
+    `忽然一片叶子发光。`,
+    `${item}跳到手心里。`,
+    `大家笑得圆圆的。`,
+    `它们约好再冒险。`,
+  ];
+
+  // Keep 6-10 sentences.
+  const count = Math.max(6, Math.min(10, 6 + (seed.length % 5)));
+  return lines.slice(0, count).join("");
 }
 
 function rewriteTemplateEnding(story: string, seed: string) {
@@ -187,9 +215,14 @@ export async function POST(req: Request) {
     });
     requestId = chatReqId ?? requestId;
 
-    const story = sanitizeStrictStory(
-      rewriteTemplateEnding(clampText(content.replace(/\r\n/g, "\n"), 700), seed),
-    );
+    const raw = rewriteTemplateEnding(clampText(content.replace(/\r\n/g, "\n"), 700), seed);
+    let story = sanitizeStrictStory(raw);
+    if (!story) {
+      console.warn("[/api/generate] strict sanitize produced empty story; using fallback", {
+        requestId,
+      });
+      story = fallbackStrictStory(seed);
+    }
     storyForLog = story;
     const ipFromHeaders =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
