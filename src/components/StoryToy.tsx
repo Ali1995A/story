@@ -318,6 +318,8 @@ export default function StoryToy() {
   const keepAliveOscRef = useRef<OscillatorNode | null>(null);
   const keepAliveGainRef = useRef<GainNode | null>(null);
   const chatPressingRef = useRef(false);
+  const recordStopWatchdogRef = useRef<number | null>(null);
+  const recordStopAttemptRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -361,7 +363,7 @@ export default function StoryToy() {
         "--app-height",
         `${Math.round(height)}px`,
       );
-      if (!hasUserToggledShowTextRef.current) {
+      if (!hasUserToggledShowTextRef.current && !story.trim()) {
         setShowText(shouldDefaultShowText());
       }
     };
@@ -374,7 +376,7 @@ export default function StoryToy() {
       window.visualViewport?.removeEventListener("resize", setAppHeight);
       window.visualViewport?.removeEventListener("scroll", setAppHeight);
     };
-  }, []);
+  }, [story]);
 
   useEffect(() => {
     return () => {
@@ -667,6 +669,7 @@ export default function StoryToy() {
 
   const stopRecordingNow = () => {
     abortRecordingRef.current = true;
+    setChatSending(false);
     try {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -689,6 +692,19 @@ export default function StoryToy() {
     abortRecordingRef.current = false;
     setChatSending(true);
     setChatPhase("encoding");
+
+    recordStopAttemptRef.current += 1;
+    const attemptId = recordStopAttemptRef.current;
+    if (recordStopWatchdogRef.current) window.clearTimeout(recordStopWatchdogRef.current);
+    recordStopWatchdogRef.current = window.setTimeout(() => {
+      if (attemptId !== recordStopAttemptRef.current) return;
+      // If MediaRecorder never fires onstop (seen on some iPhone/WeChat builds),
+      // keep the convo moving instead of getting stuck on "sending".
+      setChatSending(false);
+      setChatPhase("thinking");
+      void sendChat({ inputText: "（刚才声音没发出去，我再说一遍～）" });
+    }, 3500);
+
     try {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") {
@@ -699,6 +715,13 @@ export default function StoryToy() {
           // ignore
         }
         recorder.stop();
+      } else {
+        // No active recorder; fall back to a text nudge instead of getting stuck.
+        if (recordStopWatchdogRef.current) window.clearTimeout(recordStopWatchdogRef.current);
+        recordStopWatchdogRef.current = null;
+        setChatSending(false);
+        setChatPhase("thinking");
+        void sendChat({ inputText: "（我没听到声音，你再说一遍～）" });
       }
     } catch {
       // ignore
@@ -791,6 +814,13 @@ export default function StoryToy() {
       if (!data.ok) throw new Error(data.error);
 
       setStory(data.story);
+      if (!hasUserToggledShowTextRef.current) {
+        try {
+          if (window.matchMedia("(max-width: 480px)").matches) setShowText(true);
+        } catch {
+          // ignore
+        }
+      }
       setBusyStage("tts");
       try {
         const ttsRes = await fetch("/api/tts", {
@@ -943,6 +973,8 @@ export default function StoryToy() {
       };
       recorder.onstop = async () => {
         window.clearTimeout(hardStopId);
+        if (recordStopWatchdogRef.current) window.clearTimeout(recordStopWatchdogRef.current);
+        recordStopWatchdogRef.current = null;
         setRecording(false);
         try {
           stream.getTracks().forEach((t) => t.stop());

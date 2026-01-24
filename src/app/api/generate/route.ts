@@ -36,15 +36,17 @@ function stableChoice(seed: string, items: string[]) {
 function rewriteTemplateEnding(story: string, seed: string) {
   const s = story.replace(/\s+$/g, "");
   const templateRe = /晚安我的宝贝[，,]\s*做一个甜甜的梦[。.!！]*$/;
-  if (!templateRe.test(s)) return story;
+  const sleepyTailRe =
+    /(晚安|做一个甜甜的梦|进入梦乡|睡吧|闭上眼|做个美梦|安心睡|快去睡)[。.!！]*$/;
+  if (!templateRe.test(s) && !sleepyTailRe.test(s)) return story;
 
-  const without = s.replace(templateRe, "").replace(/\s+$/g, "");
+  const without = s.replace(templateRe, "").replace(sleepyTailRe, "").replace(/\s+$/g, "");
   const endings = [
-    "晚安呀，我们明天再一起玩。",
-    "轻轻抱抱你，明天见。",
-    "谢谢你听到这里，我们下次继续。",
-    "晚安，星星会帮你守护梦。",
-    "好啦，故事先藏起来，明天再打开。",
+    "好啦，故事先收进口袋，我们继续去探险吧！",
+    "谢谢你听到这里，下一次我们再遇见新朋友。",
+    "咻——魔法火花飞走了，我们也挥挥手说再见。",
+    "故事先停在这里，小伙伴们一起开开心心回家啦。",
+    "如果你愿意，我们下次再去森林里找宝藏！",
   ];
   const tail = stableChoice(seed, endings);
   if (!without) return tail;
@@ -82,9 +84,12 @@ export async function POST(req: Request) {
       "- 中文输出；",
       "- 6~10句，短句为主；",
       "- 适合朗读，语气温暖，节奏轻快；",
+      "- 不是睡前故事：不要催眠、不要劝睡、不要说晚安/做梦/闭眼等；结尾用“继续冒险/挥手再见/约好下次”等轻快收束；",
+      "- 故事要包含孩子喜欢的元素：森林/小动物/拟人化角色/简单魔法或道具/动画感角色（至少命中其中3项）；",
+      "- 情节要有清楚的起因-经过-结果，逻辑自洽，不要跳戏；",
       "- 不能出现恐怖、暴力、血腥、成人内容；",
       "- 不要说教，不要出现“作为AI”之类的话；",
-      "- 结尾要温柔收束（如晚安/拥抱/谢谢），但不要固定模板句式，每次换一种说法；不要使用“晚安我的宝贝，做一个甜甜的梦”。",
+      "- 避免固定模板句式，结尾每次换一种说法；不要使用“晚安我的宝贝，做一个甜甜的梦”。",
     ].join("\n");
 
     const { content, requestId: chatReqId } = await zhipuChatCompletions({
