@@ -320,6 +320,7 @@ export default function StoryToy() {
   const chatPressingRef = useRef(false);
   const recordStopWatchdogRef = useRef<number | null>(null);
   const recordStopAttemptRef = useRef(0);
+  const pressStartTimerRef = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -665,6 +666,44 @@ export default function StoryToy() {
     pendingChatPlayUrlRef.current = "";
     pendingChatSpeakTextRef.current = "";
     setChatPhase("idle");
+  };
+
+  const clearPressStartTimer = () => {
+    if (pressStartTimerRef.current) window.clearTimeout(pressStartTimerRef.current);
+    pressStartTimerRef.current = null;
+  };
+
+  const beginHoldToRecord = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (chatBusy || chatSending || !navigator.mediaDevices) return;
+    chatPressingRef.current = true;
+    clearPressStartTimer();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    // Only start recording after a short hold to prevent "tap to toggle" behavior on iOS.
+    pressStartTimerRef.current = window.setTimeout(() => {
+      pressStartTimerRef.current = null;
+      if (!chatPressingRef.current) return;
+      void startRecording();
+    }, 220);
+  };
+
+  const endHoldToRecord = () => {
+    chatPressingRef.current = false;
+    const hadPendingStart = Boolean(pressStartTimerRef.current);
+    clearPressStartTimer();
+
+    // If recording has started (or recorder exists), releasing ends and sends.
+    const recorder = mediaRecorderRef.current;
+    const isActiveRecorder = Boolean(recorder && recorder.state !== "inactive");
+    if (recording || isActiveRecorder) {
+      stopRecordingAndSend();
+      return;
+    }
+    // Short tap: do nothing (no start).
+    if (hadPendingStart) return;
   };
 
   const stopRecordingNow = () => {
@@ -1470,22 +1509,11 @@ export default function StoryToy() {
                 <button
                   type="button"
                   disabled={chatBusy || chatSending || !navigator.mediaDevices}
-                  onPointerDown={(e) => {
-                    if (chatBusy) return;
-                    chatPressingRef.current = true;
-                    try {
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                    } catch {
-                      // ignore
-                    }
-                    void startRecording();
-                  }}
-                  onPointerUp={() => {
-                    chatPressingRef.current = false;
-                    stopRecordingAndSend();
-                  }}
+                  onPointerDown={(e) => beginHoldToRecord(e)}
+                  onPointerUp={() => endHoldToRecord()}
                   onPointerCancel={() => {
                     chatPressingRef.current = false;
+                    clearPressStartTimer();
                     stopRecordingNow();
                   }}
                   onContextMenu={(e) => e.preventDefault()}
