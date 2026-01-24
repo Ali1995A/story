@@ -321,6 +321,7 @@ export default function StoryToy() {
   const recordStopWatchdogRef = useRef<number | null>(null);
   const recordStopAttemptRef = useRef(0);
   const pressStartedAtRef = useRef<number>(0);
+  const touchActiveRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cleanupUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
@@ -669,6 +670,7 @@ export default function StoryToy() {
   };
 
   const beginHoldToRecord = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (touchActiveRef.current) return;
     if (chatBusy || chatSending || !navigator.mediaDevices) return;
     chatPressingRef.current = true;
     pressStartedAtRef.current = Date.now();
@@ -677,7 +679,23 @@ export default function StoryToy() {
     } catch {
       // ignore
     }
+    void requestMicPermissionOnce();
     void startRecording();
+  };
+
+  const beginHoldToRecordTouch = (e: React.TouchEvent<HTMLButtonElement>) => {
+    if (chatBusy || chatSending || !navigator.mediaDevices) return;
+    touchActiveRef.current = true;
+    chatPressingRef.current = true;
+    pressStartedAtRef.current = Date.now();
+    void requestMicPermissionOnce();
+    void startRecording();
+    // Avoid generating synthetic mouse/click events that could interfere with hold-to-record.
+    try {
+      e.preventDefault();
+    } catch {
+      // ignore
+    }
   };
 
   const endHoldToRecord = () => {
@@ -1507,8 +1525,22 @@ export default function StoryToy() {
                     pressStartedAtRef.current = 0;
                     stopRecordingNow();
                   }}
+                  onTouchStart={(e) => beginHoldToRecordTouch(e)}
+                  onTouchEnd={() => {
+                    endHoldToRecord();
+                    // Let pointer events work again after this touch sequence.
+                    window.setTimeout(() => {
+                      touchActiveRef.current = false;
+                    }, 0);
+                  }}
+                  onTouchCancel={() => {
+                    touchActiveRef.current = false;
+                    chatPressingRef.current = false;
+                    pressStartedAtRef.current = 0;
+                    stopRecordingNow();
+                  }}
                   onContextMenu={(e) => e.preventDefault()}
-                  className="w-full select-none rounded-3xl bg-[linear-gradient(135deg,var(--pink-500),var(--lav-500))] px-6 py-5 text-center text-base font-semibold text-white shadow-[0_14px_30px_rgba(255,63,150,0.28)] disabled:opacity-40 active:scale-[0.99] md:text-lg"
+                  className="w-full touch-none select-none rounded-3xl bg-[linear-gradient(135deg,var(--pink-500),var(--lav-500))] px-6 py-5 text-center text-base font-semibold text-white shadow-[0_14px_30px_rgba(255,63,150,0.28)] disabled:opacity-40 active:scale-[0.99] md:text-lg"
                   aria-label="按住说话，松开发送"
                 >
                   {recording ? "松开我，海皮开口" : "按住我，说给海皮听"}
