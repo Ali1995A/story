@@ -1131,7 +1131,7 @@ export default function StoryToy() {
   return (
     <div className="app-shell relative flex items-stretch justify-center overflow-x-hidden overflow-y-auto bg-[radial-gradient(1200px_700px_at_30%_10%,rgba(255,90,165,0.40),transparent_60%),radial-gradient(900px_600px_at_70%_25%,rgba(124,92,255,0.22),transparent_60%),linear-gradient(180deg,#fff6fb,#ffe7f3_55%,#fff6fb)] px-[max(16px,env(safe-area-inset-left))] py-[max(16px,env(safe-area-inset-top))] md:px-[max(32px,env(safe-area-inset-left))] md:py-[max(28px,env(safe-area-inset-top))]">
       <div className="pointer-events-none absolute -top-24 left-1/2 h-[360px] w-[360px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle_at_30%_30%,rgba(255,90,165,0.50),transparent_60%)] blur-2xl" />
-      <main className="relative w-full max-w-none pb-[max(18px,env(safe-area-inset-bottom))] xl:max-w-[1400px] 2xl:max-w-[1600px]">
+      <main className="relative w-full max-w-none pb-[max(18px,env(safe-area-inset-bottom))] max-[480px]:pb-[max(96px,env(safe-area-inset-bottom))] xl:max-w-[1400px] 2xl:max-w-[1600px]">
         {busy ? (
           <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-6">
             <div className="absolute inset-0 bg-white/55 backdrop-blur-sm" />
@@ -1166,7 +1166,7 @@ export default function StoryToy() {
             </div>
           </div>
         ) : null}
-        <div className="grid gap-4 md:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] md:gap-6 lg:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:gap-8">
+        <div className="grid gap-4 max-[480px]:gap-3 md:grid-cols-[minmax(360px,460px)_minmax(0,1fr)] md:gap-6 lg:grid-cols-[minmax(420px,520px)_minmax(0,1fr)] lg:gap-8">
           <div className="rounded-3xl border border-[color:var(--card-border)] bg-[color:var(--card)] p-5 shadow-[var(--shadow)] backdrop-blur md:flex md:flex-col md:p-6 lg:p-8">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1387,7 +1387,7 @@ export default function StoryToy() {
                 </div>
               </div>
 
-              <div className="mt-3 max-h-[38vh] space-y-2 overflow-auto rounded-2xl border border-black/5 bg-white/70 p-3">
+              <div className="mt-3 max-h-[38vh] space-y-2 overflow-auto rounded-2xl border border-black/5 bg-white/70 p-3 max-[480px]:max-h-none max-[480px]:overflow-visible">
                 {chatMessages.length === 0 ? (
                   <div className="text-sm text-black/55">
                     按住下面按钮说话，松开就发给海皮老师。
