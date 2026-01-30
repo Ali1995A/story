@@ -1579,7 +1579,7 @@ export default function StoryToy() {
               </span>
             </button>
 
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={togglePlay}
@@ -1593,10 +1593,14 @@ export default function StoryToy() {
                 type="button"
                 onClick={toggleSpeakLang}
                 disabled={!storyZh.trim() && !storyEn.trim()}
-                className="h-9 rounded-2xl border border-black/5 bg-white/70 px-3 text-xs font-semibold text-black/70 shadow-sm disabled:opacity-40 active:scale-[0.99]"
-                aria-label="切换朗读语言"
+                className={
+                  "grid h-16 w-16 place-items-center rounded-3xl border border-black/5 bg-white/70 text-[color:var(--pink-600)] shadow-sm disabled:opacity-40 active:scale-[0.98] md:h-18 md:w-18 lg:h-20 lg:w-20"
+                }
+                aria-label={speakLang === "zh" ? "切换为英文朗读" : "切换为中文朗读"}
               >
-                {speakLang === "zh" ? "朗读：中文" : "朗读：EN"}
+                <span className="text-xl font-extrabold tracking-wide md:text-2xl lg:text-3xl">
+                  {speakLang === "zh" ? "ABC" : "中"}
+                </span>
               </button>
             </div>
           </div>
