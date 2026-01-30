@@ -1390,8 +1390,84 @@ export default function StoryToy() {
     }
     setPlaying(false);
     setSpeakLang(next);
-    if (next === "en" && storyZh.trim() && !storyEn.trim()) {
-      setError(enBusy ? "英文故事还在变出来呢～等一下下。" : "英文故事还没准备好～");
+
+    // If the user explicitly switches language, try to start playback immediately
+    // within the same user gesture (important on iOS/WeChat).
+    if (next === "en") {
+      if (!storyEn.trim()) {
+        setError(enBusy ? "英文故事还在变出来呢～等一下下。" : "英文故事还没准备好～");
+        return;
+      }
+      setError("");
+      void (async () => {
+        try {
+          // Prefer server TTS for English to avoid system voice mismatches.
+          const ttsRes = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ story: storyEn, lang: "en" }),
+          });
+          const ttsText = await ttsRes.text();
+          let ttsData: TtsResult;
+          try {
+            ttsData = JSON.parse(ttsText) as TtsResult;
+          } catch {
+            throw new Error(ttsText || `语音请求失败：${ttsRes.status} ${ttsRes.statusText}`);
+          }
+          if (!ttsData.ok) throw new Error(ttsData.error);
+
+          const url = base64ToObjectUrl(ttsData.audioBase64, ttsData.audioMime);
+          if (cleanupEnUrlRef.current) URL.revokeObjectURL(cleanupEnUrlRef.current);
+          cleanupEnUrlRef.current = url;
+          setAudioUrlEn(url);
+
+          const audio = audioRef.current;
+          if (!audio) return;
+          audio.src = url;
+          audio.load();
+          await ensureAudioSession();
+          await unlockAudioForIOS();
+          await audio.play();
+          setPlaying(true);
+        } catch (e) {
+          console.warn("[toggleSpeakLang] EN play failed, falling back to system voice", e);
+          pendingSpeakLangRef.current = "en";
+          const spoke = await speakWithSystem(storyEn, "en");
+          if (!spoke) {
+            pendingSpeakTextRef.current = storyEn;
+            scheduleSpeakOnNextGesture();
+            setError(friendlyNeedTapSpeaker());
+          }
+        }
+      })();
+      return;
+    }
+
+    // Switching back to Chinese: try to play Chinese immediately if available.
+    if (next === "zh" && storyZh.trim()) {
+      setError("");
+      void (async () => {
+        try {
+          if (audioUrlZh && audioRef.current) {
+            audioRef.current.src = audioUrlZh;
+            audioRef.current.load();
+            await ensureAudioSession();
+            await unlockAudioForIOS();
+            await audioRef.current.play();
+            setPlaying(true);
+            return;
+          }
+        } catch {
+          // ignore and fall back
+        }
+        pendingSpeakLangRef.current = "zh";
+        const spoke = await speakWithSystem(storyZh, "zh");
+        if (!spoke) {
+          pendingSpeakTextRef.current = storyZh;
+          scheduleSpeakOnNextGesture();
+          setError(friendlyNeedTapSpeaker());
+        }
+      })();
     } else {
       setError("");
     }
