@@ -6,8 +6,12 @@ type MemoryEntry = {
   id: string;
   createdAt: string;
   kind?: "story" | "chat";
+  lang?: "zh" | "en";
+  generationId?: string;
   seed: string;
   story: string;
+  storyZh?: string;
+  storyEn?: string;
   requestId?: string;
   hasAudio: boolean;
   conversationId?: string;
@@ -35,6 +39,76 @@ export default function AdminPage() {
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
 
   const canFetch = useMemo(() => token.trim().length > 0 && !busy, [token, busy]);
+
+  type StoryGroupItem = {
+    kind: "storyGroup";
+    id: string;
+    createdAt: string;
+    seed: string;
+    requestIds: string[];
+    hasAudio: boolean;
+    storyZh?: string;
+    storyEn?: string;
+  };
+
+  type EntryItem = { kind: "entry"; entry: MemoryEntry };
+  type Item = StoryGroupItem | EntryItem;
+
+  const items = useMemo<Item[]>(() => {
+    const groups = new Map<string, MemoryEntry[]>();
+    for (const m of memories) {
+      if ((m.kind || "story") === "chat") continue;
+      const gid = m.generationId?.trim();
+      if (!gid) continue;
+      const arr = groups.get(gid) ?? [];
+      arr.push(m);
+      groups.set(gid, arr);
+    }
+
+    const seen = new Set<string>();
+    const out: Item[] = [];
+
+    for (const m of memories) {
+      if ((m.kind || "story") !== "chat" && m.generationId?.trim()) {
+        const gid = m.generationId.trim();
+        if (seen.has(gid)) continue;
+        seen.add(gid);
+        const entries = groups.get(gid) ?? [m];
+
+        const zh =
+          entries.find((x) => x.lang === "zh" && (x.storyZh || x.story))?.storyZh ||
+          entries.find((x) => x.lang === "zh" && (x.storyZh || x.story))?.story ||
+          entries.find((x) => x.storyZh)?.storyZh ||
+          undefined;
+        const en =
+          entries.find((x) => x.lang === "en" && (x.storyEn || x.story))?.storyEn ||
+          entries.find((x) => x.lang === "en" && (x.storyEn || x.story))?.story ||
+          entries.find((x) => x.storyEn)?.storyEn ||
+          undefined;
+
+        // Newer format writes a single story record with both fields populated.
+        const single = entries.find((x) => x.storyZh && x.storyEn);
+        const mergedZh = zh || single?.storyZh || undefined;
+        const mergedEn = en || single?.storyEn || undefined;
+
+        out.push({
+          kind: "storyGroup",
+          id: gid,
+          createdAt: m.createdAt,
+          seed: m.seed,
+          requestIds: entries.map((x) => x.requestId).filter(Boolean) as string[],
+          hasAudio: entries.some((x) => x.hasAudio),
+          storyZh: mergedZh,
+          storyEn: mergedEn,
+        });
+        continue;
+      }
+
+      out.push({ kind: "entry", entry: m });
+    }
+
+    return out;
+  }, [memories]);
 
   const fetchMemories = async () => {
     if (!canFetch) return;
@@ -111,7 +185,7 @@ export default function AdminPage() {
 
           <div className="mt-4 flex items-center justify-between gap-3">
             <div className="text-sm text-black/60">
-              共 {memories.length} 条（按时间倒序）
+              共 {memories.length} 条（按时间倒序；故事会按 generationId 合并展示）
             </div>
             <button
               type="button"
@@ -125,55 +199,104 @@ export default function AdminPage() {
         </div>
 
         <div className="mt-4 grid gap-4">
-          {memories.map((m) => (
-            <section
-              key={m.id}
-              className="rounded-3xl border border-black/5 bg-white/70 p-5 shadow-sm backdrop-blur"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-black/80">
-                  {formatLocalTime(m.createdAt)}
-                </div>
-                <div className="text-xs text-black/50">
-                  {(m.kind || "story") === "chat" ? "对话" : "故事"}
-                  {" · "}
-                  {m.hasAudio ? "有语音" : "无语音"}
-                  {m.requestId ? ` · ${m.requestId}` : ""}
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
-                <div className="text-xs font-semibold text-black/50">种子</div>
-                <div className="mt-1 whitespace-pre-wrap break-words text-black/80">
-                  {m.seed}
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
-                <div className="text-xs font-semibold text-black/50">故事</div>
-                <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
-                  {m.story}
-                </div>
-              </div>
-
-              {(m.kind || "story") === "chat" ? (
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
-                    <div className="text-xs font-semibold text-black/50">孩子</div>
-                    <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
-                      {m.kidText || "（语音）"}
+          {items.map((it) => {
+            if (it.kind === "storyGroup") {
+              return (
+                <section
+                  key={`g-${it.id}`}
+                  className="rounded-3xl border border-black/5 bg-white/70 p-5 shadow-sm backdrop-blur"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-black/80">
+                      {formatLocalTime(it.createdAt)}
+                    </div>
+                    <div className="text-xs text-black/50">
+                      故事（双语）{" · "}
+                      {it.hasAudio ? "有语音" : "无语音"}
+                      {it.requestIds.length ? ` · ${it.requestIds.join(" / ")}` : ""}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
-                    <div className="text-xs font-semibold text-black/50">海皮</div>
-                    <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
-                      {m.assistantText || ""}
+
+                  <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                    <div className="text-xs font-semibold text-black/50">种子</div>
+                    <div className="mt-1 whitespace-pre-wrap break-words text-black/80">
+                      {it.seed}
                     </div>
                   </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                      <div className="text-xs font-semibold text-black/50">中文</div>
+                      <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                        {it.storyZh || "（缺失）"}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                      <div className="text-xs font-semibold text-black/50">English</div>
+                      <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                        {it.storyEn || "（缺失）"}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              );
+            }
+
+            const m = it.entry;
+            const kind = (m.kind || "story") === "chat" ? "对话" : "故事";
+            return (
+              <section
+                key={m.id}
+                className="rounded-3xl border border-black/5 bg-white/70 p-5 shadow-sm backdrop-blur"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-black/80">
+                    {formatLocalTime(m.createdAt)}
+                  </div>
+                  <div className="text-xs text-black/50">
+                    {kind}
+                    {m.lang ? ` · ${m.lang}` : ""}
+                    {" · "}
+                    {m.hasAudio ? "有语音" : "无语音"}
+                    {m.requestId ? ` · ${m.requestId}` : ""}
+                  </div>
                 </div>
-              ) : null}
-            </section>
-          ))}
+
+                <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                  <div className="text-xs font-semibold text-black/50">种子</div>
+                  <div className="mt-1 whitespace-pre-wrap break-words text-black/80">
+                    {m.seed}
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                  <div className="text-xs font-semibold text-black/50">
+                    {(m.kind || "story") === "chat" ? "故事背景" : "故事"}
+                  </div>
+                  <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                    {m.story}
+                  </div>
+                </div>
+
+                {(m.kind || "story") === "chat" ? (
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                      <div className="text-xs font-semibold text-black/50">孩子</div>
+                      <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                        {m.kidText || "（语音）"}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-black/5 bg-white/80 px-4 py-3 text-sm">
+                      <div className="text-xs font-semibold text-black/50">海皮</div>
+                      <div className="mt-1 whitespace-pre-wrap break-words leading-7 text-black/80">
+                        {m.assistantText || ""}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
         </div>
       </main>
     </div>

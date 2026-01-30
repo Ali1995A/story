@@ -109,31 +109,68 @@ function buildSystemPrompt() {
   ].join("\n");
 }
 
+function buildSystemPromptEn() {
+  return [
+    'You are "Haipi", a very patient kindergarten teacher talking with a 5-year-old child.',
+    "The topic comes from the story the child just heard.",
+    "Goal: guide the child to think, notice, and express in a playful way, with a tiny bit of gentle science facts.",
+    "Rules:",
+    "- Reply with 1 to 3 short sentences each time.",
+    "- Warm, playful, encouraging tone.",
+    "- Ask questions and guide step by step. Do not lecture.",
+    "- Must be extremely safe: no fear, no violence, no adult content.",
+    "- If the child's words are unclear: kindly confirm, then ask a simple question to help them try again.",
+    "- You may end with a small question to invite the child to continue.",
+  ].join("\n");
+}
+
 export async function POST(req: Request) {
   let requestId: string | undefined;
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
-    const model =
-      process.env.ZHIPU_VOICE_MODEL?.trim() || "glm-4-voice";
-    const endpoint =
-      process.env.ZHIPU_VOICE_ENDPOINT?.trim() ||
-      "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
     const body = (await req.json().catch(() => ({}))) as {
       conversationId?: unknown;
+      generationId?: unknown;
       story?: unknown;
+      storyZh?: unknown;
+      storyEn?: unknown;
       seed?: unknown;
+      lang?: unknown;
       history?: unknown;
       inputText?: unknown;
       inputAudioBase64?: unknown;
       inputAudioMime?: unknown;
     };
 
+    const langRaw = typeof body.lang === "string" ? body.lang.trim() : "";
+    const lang: "zh" | "en" = langRaw === "en" ? "en" : "zh";
+
+    const model =
+      (lang === "en"
+        ? process.env.STORY_EN_VOICE_MODEL?.trim()
+        : process.env.ZHIPU_VOICE_MODEL?.trim()) || "glm-4-voice";
+    const endpoint =
+      (lang === "en"
+        ? process.env.STORY_EN_VOICE_ENDPOINT?.trim()
+        : process.env.ZHIPU_VOICE_ENDPOINT?.trim()) ||
+      "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
     const conversationIdRaw =
       typeof body.conversationId === "string" ? body.conversationId : "";
     const conversationId = conversationIdRaw.trim() || crypto.randomUUID();
 
-    const story = clampText(typeof body.story === "string" ? body.story : "", 1200);
+    const generationIdRaw =
+      typeof body.generationId === "string" ? body.generationId : "";
+    const generationId = clampText(generationIdRaw, 80) || undefined;
+
+    const storyZh = clampText(typeof body.storyZh === "string" ? body.storyZh : "", 1400);
+    const storyEn = clampText(typeof body.storyEn === "string" ? body.storyEn : "", 1400);
+    const storyLegacy = clampText(typeof body.story === "string" ? body.story : "", 1400);
+    const story = clampText(
+      lang === "en" ? (storyEn || storyZh || storyLegacy) : (storyZh || storyLegacy),
+      1400,
+    );
     if (!story) {
       return NextResponse.json<ChatErr>(
         { ok: false, error: "Missing story" },
@@ -170,19 +207,35 @@ export async function POST(req: Request) {
       );
     }
 
-    const system = buildSystemPrompt();
+    const system = lang === "en" ? buildSystemPromptEn() : buildSystemPrompt();
 
     const userTextBlock = [
-      `故事（作为话题背景）：\n${story}`,
-      seed ? `孩子的输入种子（可选参考）：${seed}` : "",
-      historyText.length
-        ? `最近对话（供你保持上下文）：\n${historyText
-            .map((m) => `${m.role === "user" ? "孩子" : "海皮"}：${m.content}`)
-            .join("\n")}`
+      lang === "en"
+        ? `Story (topic background):\n${story}`
+        : `故事（作为话题背景）：\n${story}`,
+      seed
+        ? lang === "en"
+          ? `Seed (optional reference): ${seed}`
+          : `孩子的输入种子（可选参考）：${seed}`
         : "",
-      inputText ? `孩子这次说/写的是：${inputText}` : "",
+      historyText.length
+        ? lang === "en"
+          ? `Recent conversation:\n${historyText
+              .map((m) => `${m.role === "user" ? "Kid" : "Haipi"}: ${m.content}`)
+              .join("\n")}`
+          : `最近对话（供你保持上下文）：\n${historyText
+              .map((m) => `${m.role === "user" ? "孩子" : "海皮"}：${m.content}`)
+              .join("\n")}`
+        : "",
+      inputText
+        ? lang === "en"
+          ? `This time the kid said/wrote: ${inputText}`
+          : `孩子这次说/写的是：${inputText}`
+        : "",
       inputAudioBase64
-        ? "孩子这次是语音输入：请尽力听懂，并自然地回应。"
+        ? lang === "en"
+          ? "This time the kid used voice. Please try to understand and respond naturally."
+          : "孩子这次是语音输入：请尽力听懂，并自然地回应。"
         : "",
     ]
       .filter(Boolean)
@@ -275,7 +328,10 @@ export async function POST(req: Request) {
       console.warn("[/api/chat] voice failed, falling back to text chat", {
         message: voiceErr instanceof Error ? voiceErr.message : String(voiceErr),
       });
-      const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4.7";
+      const chatModel =
+        (lang === "en"
+          ? process.env.STORY_EN_CHAT_MODEL?.trim()
+          : process.env.ZHIPU_CHAT_MODEL?.trim()) || "glm-4.7";
       const { content, requestId: chatReqId } = await zhipuChatCompletions({
         apiKey,
         model: chatModel,
@@ -283,7 +339,10 @@ export async function POST(req: Request) {
           { role: "system", content: system },
           {
             role: "user",
-            content: `${userTextBlock}\n\n（如果孩子的语音听不清，请先温柔地请TA再说一遍。）`,
+            content:
+              lang === "en"
+                ? `${userTextBlock}\n\n(If the kid's voice is unclear, kindly ask them to try again.)`
+                : `${userTextBlock}\n\n（如果孩子的语音听不清，请先温柔地请TA再说一遍。）`,
           },
         ],
         temperature: 0.7,
@@ -306,7 +365,10 @@ export async function POST(req: Request) {
       const ttsEndpoint =
         process.env.ZHIPU_TTS_ENDPOINT?.trim() ||
         "https://open.bigmodel.cn/api/paas/v4/audio/speech";
-      const ttsVoice = process.env.ZHIPU_TTS_VOICE?.trim() || undefined;
+      const ttsVoice =
+        (lang === "en"
+          ? process.env.STORY_EN_TTS_VOICE?.trim()
+          : process.env.ZHIPU_TTS_VOICE?.trim()) || undefined;
       if (ttsModel) {
         const tts = await zhipuTts({
           apiKey,
@@ -341,8 +403,12 @@ export async function POST(req: Request) {
     try {
       await appendMemory({
         kind: "chat",
+        lang,
+        generationId,
         seed,
         story,
+        storyZh: storyZh || undefined,
+        storyEn: storyEn || undefined,
         conversationId,
         kidText: inputText || undefined,
         assistantText: textOut,

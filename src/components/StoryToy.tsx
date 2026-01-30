@@ -2,10 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type GenerateResult =
+type GenerateEnResult =
   | {
       ok: true;
       story: string;
+      lang: "en";
+      generationId?: string;
+      requestId?: string;
+    }
+  | {
+      ok: false;
+      error: string;
+      requestId?: string;
+    };
+
+type GenerateBilingualResult =
+  | {
+      ok: true;
+      generationId: string;
+      seed: string;
+      storyZh: string;
+      storyEn: string;
       requestId?: string;
     }
   | {
@@ -19,6 +36,7 @@ type TtsResult =
       ok: true;
       audioBase64: string;
       audioMime: string;
+      lang: "zh" | "en";
       requestId?: string;
     }
   | {
@@ -286,8 +304,13 @@ async function primeAudioElementForIOS(audio: HTMLAudioElement | null) {
 
 export default function StoryToy() {
   const [seed, setSeed] = useState("");
-  const [story, setStory] = useState<string>("");
-  const [audioUrl, setAudioUrl] = useState<string>("");
+  const [generationId, setGenerationId] = useState<string>("");
+  const [storyZh, setStoryZh] = useState<string>("");
+  const [storyEn, setStoryEn] = useState<string>("");
+  const [speakLang, setSpeakLang] = useState<"zh" | "en">("zh");
+  const [audioUrlZh, setAudioUrlZh] = useState<string>("");
+  const [audioUrlEn, setAudioUrlEn] = useState<string>("");
+  const [enBusy, setEnBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>("");
   const [playing, setPlaying] = useState(false);
@@ -308,9 +331,11 @@ export default function StoryToy() {
   const chatAudioRef = useRef<HTMLAudioElement | null>(null);
   const systemUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const pendingSpeakTextRef = useRef<string>("");
+  const pendingSpeakLangRef = useRef<"zh" | "en">("zh");
   const hasPromptedMicRef = useRef(false);
   const speakOnGestureArmedRef = useRef(false);
   const pendingChatSpeakTextRef = useRef<string>("");
+  const pendingChatSpeakLangRef = useRef<"zh" | "en">("zh");
   const chatSpeakOnGestureArmedRef = useRef(false);
   const pendingChatPlayUrlRef = useRef<string>("");
   const chatPlayOnGestureArmedRef = useRef(false);
@@ -323,7 +348,8 @@ export default function StoryToy() {
   const pressStartedAtRef = useRef<number>(0);
   const touchActiveRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const cleanupUrlRef = useRef<string>("");
+  const cleanupZhUrlRef = useRef<string>("");
+  const cleanupEnUrlRef = useRef<string>("");
   const chatCleanupUrlRef = useRef<string>("");
   const hasUserToggledShowTextRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -341,6 +367,14 @@ export default function StoryToy() {
   }, []);
 
   const canGenerate = useMemo(() => seed.trim().length > 0 && !busy, [seed, busy]);
+
+  const activeStory = useMemo(() => {
+    return speakLang === "en" ? storyEn.trim() : storyZh.trim();
+  }, [speakLang, storyZh, storyEn]);
+
+  const activeAudioUrl = useMemo(() => {
+    return speakLang === "en" ? audioUrlEn : audioUrlZh;
+  }, [speakLang, audioUrlEn, audioUrlZh]);
 
   const shouldDefaultShowText = () => {
     if (typeof window === "undefined") return false;
@@ -365,7 +399,7 @@ export default function StoryToy() {
         "--app-height",
         `${Math.round(height)}px`,
       );
-      if (!hasUserToggledShowTextRef.current && !story.trim()) {
+      if (!hasUserToggledShowTextRef.current && !storyZh.trim() && !storyEn.trim()) {
         setShowText(shouldDefaultShowText());
       }
     };
@@ -378,11 +412,12 @@ export default function StoryToy() {
       window.visualViewport?.removeEventListener("resize", setAppHeight);
       window.visualViewport?.removeEventListener("scroll", setAppHeight);
     };
-  }, [story]);
+  }, [storyZh, storyEn]);
 
   useEffect(() => {
     return () => {
-      if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
+      if (cleanupZhUrlRef.current) URL.revokeObjectURL(cleanupZhUrlRef.current);
+      if (cleanupEnUrlRef.current) URL.revokeObjectURL(cleanupEnUrlRef.current);
       if (chatCleanupUrlRef.current) URL.revokeObjectURL(chatCleanupUrlRef.current);
       if (canSystemSpeak) {
         try {
@@ -490,6 +525,45 @@ export default function StoryToy() {
     return "iPad 需要你点一下喇叭我才能开口哦～";
   };
 
+  const createGenerationId = () => {
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+      }
+    } catch {
+      // ignore
+    }
+    return `g_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  };
+
+  // Intentionally keep this helper unused for now. The app prefers single-call bilingual generation
+  // for stability on iPad/WeChat. If needed later, it can be used as a fallback path.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const loadEnglishStory = async (opts: { seed: string; generationId: string }) => {
+    setEnBusy(true);
+    try {
+      const res = await fetch("/api/generate-en", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seed: opts.seed, generationId: opts.generationId }),
+      });
+      const rawText = await res.text();
+      let data: GenerateEnResult;
+      try {
+        data = JSON.parse(rawText) as GenerateEnResult;
+      } catch {
+        throw new Error(rawText || `请求失败：${res.status} ${res.statusText}`);
+      }
+      if (!data.ok) throw new Error(data.error);
+      setStoryEn(data.story);
+    } catch (e) {
+      console.warn("[/api/generate-en] failed", e);
+      setStoryEn("");
+    } finally {
+      setEnBusy(false);
+    }
+  };
+
   const requestMicPermissionOnce = async () => {
     if (hasPromptedMicRef.current) return;
     hasPromptedMicRef.current = true;
@@ -562,7 +636,7 @@ export default function StoryToy() {
       speakOnGestureArmedRef.current = false;
       const text = pendingSpeakTextRef.current.trim();
       if (!text) return;
-      void speakWithSystem(text);
+      void speakWithSystem(text, pendingSpeakLangRef.current);
     });
   };
 
@@ -575,11 +649,11 @@ export default function StoryToy() {
       chatSpeakOnGestureArmedRef.current = false;
       const text = pendingChatSpeakTextRef.current.trim();
       if (!text) return;
-      void speakChatWithSystem(text);
+      void speakChatWithSystem(text, pendingChatSpeakLangRef.current);
     });
   };
 
-  const speakWithSystem = async (text: string) => {
+  const speakWithSystem = async (text: string, lang: "zh" | "en") => {
     if (!canSystemSpeak) return false;
     const t = text.trim();
     if (!t) return false;
@@ -587,7 +661,7 @@ export default function StoryToy() {
     stopSystemSpeak();
     pendingSpeakTextRef.current = "";
     const utterance = new SpeechSynthesisUtterance(t);
-    utterance.lang = "zh-CN";
+    utterance.lang = lang === "en" ? "en-US" : "zh-CN";
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -601,12 +675,13 @@ export default function StoryToy() {
     } catch {
       setPlaying(false);
       pendingSpeakTextRef.current = t;
+      pendingSpeakLangRef.current = lang;
       scheduleSpeakOnNextGesture();
       return false;
     }
   };
 
-  const speakChatWithSystem = async (text: string) => {
+  const speakChatWithSystem = async (text: string, lang: "zh" | "en") => {
     if (!canSystemSpeak) return false;
     const t = text.trim();
     if (!t) return false;
@@ -614,7 +689,7 @@ export default function StoryToy() {
     stopSystemSpeak();
     pendingChatSpeakTextRef.current = "";
     const utterance = new SpeechSynthesisUtterance(t);
-    utterance.lang = "zh-CN";
+    utterance.lang = lang === "en" ? "en-US" : "zh-CN";
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
@@ -627,6 +702,7 @@ export default function StoryToy() {
       return true;
     } catch {
       pendingChatSpeakTextRef.current = t;
+      pendingChatSpeakLangRef.current = lang;
       scheduleChatSpeakOnNextGesture();
       return false;
     }
@@ -787,7 +863,11 @@ export default function StoryToy() {
     stopSystemSpeak();
     stopChatAudio();
     setSeed("");
-    setStory("");
+    setGenerationId("");
+    setStoryZh("");
+    setStoryEn("");
+    setSpeakLang("zh");
+    setEnBusy(false);
     setError("");
     setPlaying(false);
     hasUserToggledShowTextRef.current = false;
@@ -805,15 +885,20 @@ export default function StoryToy() {
       chatAudioRef.current.pause();
       chatAudioRef.current.currentTime = 0;
     }
-    if (cleanupUrlRef.current) {
-      URL.revokeObjectURL(cleanupUrlRef.current);
-      cleanupUrlRef.current = "";
+    if (cleanupZhUrlRef.current) {
+      URL.revokeObjectURL(cleanupZhUrlRef.current);
+      cleanupZhUrlRef.current = "";
+    }
+    if (cleanupEnUrlRef.current) {
+      URL.revokeObjectURL(cleanupEnUrlRef.current);
+      cleanupEnUrlRef.current = "";
     }
     if (chatCleanupUrlRef.current) {
       URL.revokeObjectURL(chatCleanupUrlRef.current);
       chatCleanupUrlRef.current = "";
     }
-    setAudioUrl("");
+    setAudioUrlZh("");
+    setAudioUrlEn("");
     textareaRef.current?.focus();
   };
 
@@ -828,10 +913,26 @@ export default function StoryToy() {
     setError("");
     if (!hasUserToggledShowTextRef.current) setShowText(shouldDefaultShowText());
     setPlaying(false);
+    setSpeakLang("zh");
     setConversationId("");
     setChatMessages([]);
     setChatError("");
     if (audioRef.current) audioRef.current.pause();
+
+    const newGenId = createGenerationId();
+    setGenerationId(newGenId);
+    setStoryZh("");
+    setStoryEn("");
+    setAudioUrlZh("");
+    setAudioUrlEn("");
+    if (cleanupZhUrlRef.current) {
+      URL.revokeObjectURL(cleanupZhUrlRef.current);
+      cleanupZhUrlRef.current = "";
+    }
+    if (cleanupEnUrlRef.current) {
+      URL.revokeObjectURL(cleanupEnUrlRef.current);
+      cleanupEnUrlRef.current = "";
+    }
 
     // Prime audio permissions within the user gesture (iOS Safari).
     void requestMicPermissionOnce();
@@ -846,22 +947,25 @@ export default function StoryToy() {
     }
 
     try {
-      const res = await fetch("/api/generate", {
+      // Single-call bilingual generation to reduce network round-trips on iPad/WeChat.
+      const res = await fetch("/api/generate-bilingual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seed }),
+        body: JSON.stringify({ seed, generationId: newGenId }),
       });
 
-      let data: GenerateResult;
+      let data: GenerateBilingualResult;
       const rawText = await res.text();
       try {
-        data = JSON.parse(rawText) as GenerateResult;
+        data = JSON.parse(rawText) as GenerateBilingualResult;
       } catch {
         throw new Error(rawText || `请求失败：${res.status} ${res.statusText}`);
       }
       if (!data.ok) throw new Error(data.error);
 
-      setStory(data.story);
+      setGenerationId(data.generationId || newGenId);
+      setStoryZh(data.storyZh);
+      setStoryEn(data.storyEn);
       if (!hasUserToggledShowTextRef.current) {
         try {
           if (window.matchMedia("(max-width: 480px)").matches) setShowText(true);
@@ -874,7 +978,7 @@ export default function StoryToy() {
         const ttsRes = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ story: data.story }),
+          body: JSON.stringify({ story: data.storyZh, lang: "zh" }),
         });
 
         const ttsText = await ttsRes.text();
@@ -889,9 +993,9 @@ export default function StoryToy() {
         if (!ttsData.ok) throw new Error(ttsData.error);
 
         const url = base64ToObjectUrl(ttsData.audioBase64, ttsData.audioMime);
-        if (cleanupUrlRef.current) URL.revokeObjectURL(cleanupUrlRef.current);
-        cleanupUrlRef.current = url;
-        setAudioUrl(url);
+        if (cleanupZhUrlRef.current) URL.revokeObjectURL(cleanupZhUrlRef.current);
+        cleanupZhUrlRef.current = url;
+        setAudioUrlZh(url);
 
         if (audioRef.current) {
           audioRef.current.src = url;
@@ -902,9 +1006,10 @@ export default function StoryToy() {
           } catch (playErr) {
             setPlaying(false);
             console.warn("[audio.play] failed", playErr);
-            const spoke = await speakWithSystem(data.story);
+            pendingSpeakLangRef.current = "zh";
+            const spoke = await speakWithSystem(data.storyZh, "zh");
             if (!spoke) {
-              pendingSpeakTextRef.current = data.story;
+              pendingSpeakTextRef.current = data.storyZh;
               scheduleSpeakOnNextGesture();
               setError(friendlyNeedTapSpeaker());
             }
@@ -912,10 +1017,11 @@ export default function StoryToy() {
         }
       } catch (e) {
         console.warn("[/api/tts] failed", e);
-        setAudioUrl("");
-        const spoke = await speakWithSystem(data.story);
+        setAudioUrlZh("");
+        pendingSpeakLangRef.current = "zh";
+        const spoke = await speakWithSystem(data.storyZh, "zh");
         if (!spoke) {
-          pendingSpeakTextRef.current = data.story;
+          pendingSpeakTextRef.current = data.storyZh;
           scheduleSpeakOnNextGesture();
         }
         setError(spoke ? "我先用系统声音读给你听～" : friendlyNeedTapSpeaker());
@@ -930,10 +1036,14 @@ export default function StoryToy() {
 
   const togglePlay = async () => {
     const audio = audioRef.current;
-    if (audioUrl && audio) {
+    if (activeAudioUrl && audio) {
       try {
-        if (audio.paused) {
+        if (audio.paused || audio.currentSrc !== activeAudioUrl) {
           await unlockAudioForIOS();
+          if (audio.currentSrc !== activeAudioUrl) {
+            audio.src = activeAudioUrl;
+            audio.load();
+          }
           await audio.play();
           setPlaying(true);
         } else {
@@ -942,9 +1052,13 @@ export default function StoryToy() {
         }
       } catch (e) {
         setPlaying(false);
-        if (story.trim() && canSystemSpeak) {
+        if (activeStory.trim() && canSystemSpeak) {
           console.warn("[audio.play] failed (toggle)", e);
-          const spoke = await speakWithSystem(pendingSpeakTextRef.current || story);
+          pendingSpeakLangRef.current = speakLang;
+          const spoke = await speakWithSystem(
+            pendingSpeakTextRef.current || activeStory,
+            speakLang,
+          );
           if (!spoke) {
             scheduleSpeakOnNextGesture();
             setError(friendlyNeedTapSpeaker());
@@ -954,16 +1068,62 @@ export default function StoryToy() {
       return;
     }
 
-    if (!story.trim() || !canSystemSpeak) return;
+    if (speakLang === "en" && !storyEn.trim()) {
+      if (enBusy) setError("英文故事还在变出来呢～等一下下。");
+      return;
+    }
+
+    if (!activeStory.trim()) return;
+
+    // Prefer server TTS (if configured). Fallback to system speak if TTS is unavailable/blocked.
     try {
-      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-        stopSystemSpeak();
-        setPlaying(false);
-        return;
+      setError("");
+      const ttsRes = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ story: activeStory, lang: speakLang }),
+      });
+      const ttsText = await ttsRes.text();
+      let ttsData: TtsResult;
+      try {
+        ttsData = JSON.parse(ttsText) as TtsResult;
+      } catch {
+        throw new Error(ttsText || `语音请求失败：${ttsRes.status} ${ttsRes.statusText}`);
       }
-      await speakWithSystem(pendingSpeakTextRef.current || story);
+      if (!ttsData.ok) throw new Error(ttsData.error);
+
+      const url = base64ToObjectUrl(ttsData.audioBase64, ttsData.audioMime);
+      if (speakLang === "en") {
+        if (cleanupEnUrlRef.current) URL.revokeObjectURL(cleanupEnUrlRef.current);
+        cleanupEnUrlRef.current = url;
+        setAudioUrlEn(url);
+      } else {
+        if (cleanupZhUrlRef.current) URL.revokeObjectURL(cleanupZhUrlRef.current);
+        cleanupZhUrlRef.current = url;
+        setAudioUrlZh(url);
+      }
+
+      if (audio) {
+        audio.src = url;
+        audio.load();
+        await unlockAudioForIOS();
+        await audio.play();
+        setPlaying(true);
+      }
     } catch {
       setPlaying(false);
+      if (!canSystemSpeak) return;
+      try {
+        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+          stopSystemSpeak();
+          setPlaying(false);
+          return;
+        }
+        pendingSpeakLangRef.current = speakLang;
+        await speakWithSystem(pendingSpeakTextRef.current || activeStory, speakLang);
+      } catch {
+        setPlaying(false);
+      }
     }
   };
 
@@ -1106,8 +1266,13 @@ export default function StoryToy() {
     }
   };
 
-  const sendChat = async (opts: { inputText?: string; inputAudioBase64?: string; inputAudioMime?: string }) => {
-    if (!story.trim() || chatBusy) return;
+  const sendChat = async (opts: {
+    inputText?: string;
+    inputAudioBase64?: string;
+    inputAudioMime?: string;
+  }) => {
+    const storyForChat = speakLang === "en" ? storyEn.trim() : storyZh.trim();
+    if (!storyForChat || chatBusy) return;
     const inputText = opts.inputText?.trim() || "";
     const inputAudioBase64 = opts.inputAudioBase64 || "";
     const inputAudioMime = opts.inputAudioMime || "";
@@ -1126,9 +1291,9 @@ export default function StoryToy() {
     }
 
     try {
-      const history = [...chatMessagesRef.current].slice(-10);
+      const history = [...chatMessagesRef.current].slice(-8);
       const controller = new AbortController();
-      const reqTimeoutMs = 20000;
+      const reqTimeoutMs = 16000;
       const tid = window.setTimeout(() => controller.abort(), reqTimeoutMs);
       let res: Response;
       try {
@@ -1139,7 +1304,11 @@ export default function StoryToy() {
           body: JSON.stringify({
             conversationId: conversationId || undefined,
             seed,
-            story,
+            lang: speakLang,
+            generationId: generationId || undefined,
+            story: storyForChat,
+            storyZh: storyZh || undefined,
+            storyEn: storyEn || undefined,
             history,
             inputText: inputText || undefined,
             inputAudioBase64: inputAudioBase64 || undefined,
@@ -1170,13 +1339,15 @@ export default function StoryToy() {
 
           if (canSystemSpeak) {
             pendingChatSpeakTextRef.current = data.assistantText;
-            const spoke = await speakChatWithSystem(data.assistantText);
+            pendingChatSpeakLangRef.current = speakLang;
+            const spoke = await speakChatWithSystem(data.assistantText, speakLang);
             if (!spoke) scheduleChatSpeakOnNextGesture();
           }
         }
       } else if (canSystemSpeak) {
         pendingChatSpeakTextRef.current = data.assistantText;
-        const spoke = await speakChatWithSystem(data.assistantText);
+        pendingChatSpeakLangRef.current = speakLang;
+        const spoke = await speakChatWithSystem(data.assistantText, speakLang);
         if (!spoke) {
           scheduleChatSpeakOnNextGesture();
           setChatError("轻点一下屏幕，海皮就开口啦～");
@@ -1205,6 +1376,24 @@ export default function StoryToy() {
           // ignore
         }
       });
+    }
+  };
+
+  const toggleSpeakLang = () => {
+    const next = speakLang === "zh" ? "en" : "zh";
+    stopSystemSpeak();
+    try {
+      audioRef.current?.pause();
+      if (audioRef.current) audioRef.current.currentTime = 0;
+    } catch {
+      // ignore
+    }
+    setPlaying(false);
+    setSpeakLang(next);
+    if (next === "en" && storyZh.trim() && !storyEn.trim()) {
+      setError(enBusy ? "英文故事还在变出来呢～等一下下。" : "英文故事还没准备好～");
+    } else {
+      setError("");
     }
   };
 
@@ -1314,15 +1503,26 @@ export default function StoryToy() {
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={togglePlay}
-              disabled={!audioUrl && !(story.trim() && canSystemSpeak)}
-              className="grid h-16 w-16 place-items-center rounded-3xl border border-black/5 bg-white/70 text-[color:var(--pink-600)] shadow-sm disabled:opacity-40 active:scale-[0.98] md:h-18 md:w-18 lg:h-20 lg:w-20"
-              aria-label="播放或暂停"
-            >
-              <SpeakerIcon playing={playing} />
-            </button>
+            <div className="flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={togglePlay}
+                disabled={!activeStory.trim() && !activeAudioUrl}
+                className="grid h-16 w-16 place-items-center rounded-3xl border border-black/5 bg-white/70 text-[color:var(--pink-600)] shadow-sm disabled:opacity-40 active:scale-[0.98] md:h-18 md:w-18 lg:h-20 lg:w-20"
+                aria-label="播放或暂停"
+              >
+                <SpeakerIcon playing={playing} />
+              </button>
+              <button
+                type="button"
+                onClick={toggleSpeakLang}
+                disabled={!storyZh.trim() && !storyEn.trim()}
+                className="h-9 rounded-2xl border border-black/5 bg-white/70 px-3 text-xs font-semibold text-black/70 shadow-sm disabled:opacity-40 active:scale-[0.99]"
+                aria-label="切换朗读语言"
+              >
+                {speakLang === "zh" ? "朗读：中文" : "朗读：EN"}
+              </button>
+            </div>
           </div>
 
           {error ? (
@@ -1360,7 +1560,28 @@ export default function StoryToy() {
 
           {showText ? (
             <div className="mt-4 overflow-auto rounded-3xl border border-black/5 bg-white/70 p-4 text-[15px] leading-7 text-black/80 md:flex-1 md:p-6 md:text-lg md:leading-9 lg:p-8 lg:text-xl lg:leading-10">
-              {story ? story : "（还没有故事）"}
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-black/45 md:text-sm">
+                    中文
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap break-words">
+                    {storyZh ? storyZh : "（还没有故事）"}
+                  </div>
+                </div>
+                <div className="border-t border-black/5 pt-4">
+                  <div className="text-xs font-semibold text-black/45 md:text-sm">
+                    English
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap break-words">
+                    {storyEn
+                      ? storyEn
+                      : enBusy
+                        ? "（英文故事生成中…）"
+                        : "（还没有英文故事）"}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-3 gap-3 md:flex-1 md:content-center md:gap-6">
@@ -1390,7 +1611,7 @@ export default function StoryToy() {
               <button
                 type="button"
                 onClick={togglePlay}
-                disabled={!audioUrl && !(story.trim() && canSystemSpeak)}
+                disabled={!activeStory.trim() && !activeAudioUrl}
                 className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] md:p-6 lg:p-8"
                 aria-label="听：播放或暂停"
               >
@@ -1434,7 +1655,7 @@ export default function StoryToy() {
               <button
                 type="button"
                 onClick={togglePlay}
-                disabled={!audioUrl && !(story.trim() && canSystemSpeak)}
+                disabled={!activeStory.trim() && !activeAudioUrl}
                 className="rounded-3xl border border-black/5 bg-white/60 p-4 text-center shadow-sm disabled:opacity-40 active:scale-[0.99] lg:p-6"
                 aria-label="听：播放或暂停"
               >
@@ -1448,7 +1669,7 @@ export default function StoryToy() {
             </div>
           ) : null}
 
-          {story ? (
+          {activeStory ? (
             <div className="mt-4 rounded-3xl border border-black/5 bg-white/70 p-4 shadow-sm md:p-6 lg:p-8">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold text-black/75 md:text-base">

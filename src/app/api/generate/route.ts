@@ -8,6 +8,8 @@ export const maxDuration = 60;
 type OkResponse = {
   ok: true;
   story: string;
+  lang: "zh";
+  generationId?: string;
   requestId?: string;
 };
 
@@ -102,16 +104,25 @@ export async function POST(req: Request) {
   let requestId: string | undefined;
   let seedForLog = "";
   let storyForLog = "";
+  let generationIdForLog: string | undefined;
 
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
     const chatModel = process.env.ZHIPU_CHAT_MODEL?.trim() || "glm-4.7";
     // TTS is handled by /api/tts to avoid long single requests on serverless.
 
-    const body = (await req.json().catch(() => ({}))) as { seed?: unknown };
+    const body = (await req.json().catch(() => ({}))) as {
+      seed?: unknown;
+      generationId?: unknown;
+    };
     const seedRaw = typeof body.seed === "string" ? body.seed : "";
     const seed = clampText(seedRaw, 200);
     seedForLog = seed;
+
+    const generationIdRaw =
+      typeof body.generationId === "string" ? body.generationId : "";
+    const generationId = clampText(generationIdRaw, 80) || undefined;
+    generationIdForLog = generationId;
     if (!seed) {
       return NextResponse.json<ErrResponse>(
         { ok: false, error: "请输入一些字符" },
@@ -229,8 +240,11 @@ export async function POST(req: Request) {
     try {
       await appendMemory({
         kind: "story",
+        lang: "zh",
+        generationId: generationIdForLog,
         seed: seedForLog,
         story: storyForLog,
+        storyZh: storyForLog,
         requestId,
         hasAudio: false,
         userAgent: req.headers.get("user-agent") ?? undefined,
@@ -244,6 +258,8 @@ export async function POST(req: Request) {
       {
         ok: true,
         story,
+        lang: "zh",
+        generationId: generationIdForLog,
         requestId,
       },
       { headers: { "Cache-Control": "no-store" } },

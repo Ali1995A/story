@@ -1,17 +1,30 @@
 # 粉粉故事机（Vercel / iPad / WeChat）
 
-一个适合 5 岁左右、还不认识文字的小朋友使用的网页小玩具：随便乱按输入法 → 生成短故事 → 朗读播放。
+一个适合 5 岁左右、还不认识文字的小朋友使用的网页小玩具：随便乱按输入法 → 生成短故事 → 朗读播放；听完还能「按住说话」继续和“海皮老师”聊。
 
-## 功能
+本项目偏“设备兼容优先”：目标环境是 iPad / iOS Safari / 微信内置浏览器（音频播放、录音权限等限制很多）。
+
+## 你能得到什么
 
 - 一个大输入框：随便敲（乱码/随机字/表情都可以）
-- 一键生成：用智谱（Zhipu）LLM 组织成短故事
-- 语音播放：将故事转成音频并播放（为避免 Vercel 超时，故事生成与 TTS 拆分为两个接口）
-- 听完可继续聊：围绕故事进行多轮语音/文字对话（“海皮老师”风格）
-- 成长记录：保存每次故事与对话内容，便于回看与导出
-- 兼容优先：第一代 iPad Pro / iOS Safari / 微信内置浏览器（音频需用户点击触发）
+- 一键生成：用智谱（Zhipu）LLM 把“种子”组织成短故事（默认严格中文+标点输出）
+- 语音播放：故事合成音频并播放（为避免 Vercel 超时，故事生成与 TTS 拆分为两个接口）
+- 双语模式：同一个种子会生成中文故事 + 英文故事（英文为“直接生成”，不是把中文翻译成英文）
+- 朗读切换：默认中文朗读；可一键切到英文朗读（会按需请求英文 TTS）
+- 海皮老师：围绕刚生成的故事做多轮对话（支持语音输入；上游不支持时自动降级到文本+TTS）
+- 成长记录：把每次故事与对话写入 JSONL，可在 `/admin` 查看与导出
+- 适配细节：尽量处理 iOS/微信的“必须用户手势触发音频/需要先解锁音频会话”等限制
 
-## 本地运行
+## 技术栈
+
+- Next.js（App Router）+ TypeScript
+- React 19
+- Tailwind CSS v4
+- Server runtime：`nodejs`（API 路由在 Node 运行时）
+
+## 快速开始（本地）
+
+前置：Node.js（建议 20+）
 
 ```bash
 npm i
@@ -21,50 +34,55 @@ npm run dev
 
 打开 `http://localhost:3000`
 
+### 常用脚本
+
+- `npm run dev`：本地开发
+- `npm run build`：构建
+- `npm run start`：运行构建产物
+- `npm run lint`：ESLint
+
 ## 环境变量
 
-把这些配置到 `.env.local`（本地）或 Vercel Project Settings → Environment Variables（线上）：
+把这些配置到 `.env.local`（本地）或 Vercel Project Settings → Environment Variables（线上）。
 
-- `ZHIPU_API_KEY`：智谱 API Key
-- `ZHIPU_CHAT_MODEL`：生成故事的模型（默认 `glm-4.7`）
-- `ZHIPU_TTS_MODEL`：TTS 模型（不填则禁用语音合成；推荐 `glm-tts`）
+### 必填
+
+- `ZHIPU_API_KEY`：智谱 API Key（服务端调用）
+- `STORY_ADMIN_TOKEN`：后台查看成长记录的 token（用于 `/admin`、`/api/memories`、`/api/health`）
+
+### 建议填写
+
+- `ZHIPU_CHAT_MODEL`：生成故事/文本对话的模型（默认 `glm-4.7`）
+- `STORY_EN_CHAT_MODEL`：可选，本应用英文故事/英文对话用的模型（不填则复用 `ZHIPU_CHAT_MODEL`）
+- `ZHIPU_TTS_MODEL`：TTS 模型（不填则禁用“智谱语音合成”，UI 会回退到系统朗读；推荐 `glm-tts`）
 - `ZHIPU_TTS_ENDPOINT`：TTS 接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/audio/speech`）
-- `ZHIPU_TTS_VOICE`：可选，音色/发音人（不填/留空表示使用默认音色）
+- `ZHIPU_TTS_VOICE`：可选音色（不填/留空表示使用默认音色）
+- `STORY_EN_TTS_VOICE`：可选英文音色（不填则复用 `ZHIPU_TTS_VOICE`）
 - `ZHIPU_VOICE_MODEL`：可选，语音对话模型（默认 `glm-4-voice`）
 - `ZHIPU_VOICE_ENDPOINT`：可选，语音对话接口地址（默认 `https://open.bigmodel.cn/api/paas/v4/chat/completions`）
-- `STORY_ADMIN_TOKEN`：后台查看成长记录用的 token（用于 `/admin` 和 `/api/memories`）
+- `STORY_EN_VOICE_MODEL` / `STORY_EN_VOICE_ENDPOINT`：可选英文语音对话配置（不填则复用中文配置）
+
+### 成长记录存储（2 选 1）
+
+#### 方案 A：本地 JSONL（默认）
+
 - `STORY_LOG_PATH`：可选，记录文件路径（默认 `data/memories.jsonl`）
-- `STORY_REMOTE_LOG_URL`：可选，远端存储服务地址（例如 `https://mem.cciscc.cc/story-memories`）
-- `STORY_REMOTE_LOG_TOKEN`：可选，远端存储服务 token（Bearer）
 
-Vercel 配置提示：
+说明：这是追加写入的 JSONL（每行一条 JSON）。适合本机或带持久化磁盘的部署环境。
 
-- 需要到 Vercel Dashboard → Project → Settings → Environment Variables 逐条添加，并 Redeploy 才会生效
-- `.env.local` 不会被 Vercel 自动读取（也不应该提交到 Git）
+#### 方案 B：远端日志服务（推荐用于 Vercel）
 
-## 成长记录（后台）
+> 因为 Vercel 默认无持久化磁盘，本地文件不会长期保存。
 
-每次生成故事后，会把「种子 + 故事正文」追加写入；每次“海皮老师”对话，也会记录「孩子输入 + 海皮回复」。
+- `STORY_REMOTE_LOG_URL`：远端存储服务 base URL（例如 `https://mem.example.com/story-memories`）
+- `STORY_REMOTE_LOG_TOKEN`：远端存储服务 token（Bearer）
+- `STORY_REMOTE_LOG_TIMEOUT_MS`：可选，默认 `2000`
 
-默认本地文件保存到 `data/memories.jsonl`（JSONL，一行一条）。
+约定：远端服务需要提供这几个接口（应用会按此调用）：
 
-查看方式：
-
-- 打开 `/admin`，输入 `STORY_ADMIN_TOKEN`，点击加载
-- 或调用接口：`GET /api/memories?limit=200`，带请求头 `Authorization: Bearer <STORY_ADMIN_TOKEN>`
-
-注意：如果部署在无持久化磁盘的平台（例如 Vercel 默认环境），本地文件可能不会长期保存。要长期记录请使用带持久化存储的部署方式，或把记录路径指向你自己的持久化盘。
-
-如果配置了 `STORY_REMOTE_LOG_URL` + `STORY_REMOTE_LOG_TOKEN`，应用会优先把记录写入远端存储，并从远端读取（更适合 Vercel 这类无持久化磁盘环境）。
-
-## 海皮老师语音对话
-
-生成故事后，右侧会出现「按住对海皮说话」按钮：
-
-- 按住说话（录音），松开后发送，海皮开始“思考 → 开口说话”
-- 支持麦克风语音输入（需要浏览器/微信授权麦克风权限；微信内置浏览器也可用）
-- 对话会围绕刚生成的故事，逐步引导孩子思考与小科普
-- 为兼容接口要求，录音会在浏览器侧转为 WAV（单声道 / 16kHz / 最长 8 秒）再上传
+- `POST {base}/append`：写入一条记录（JSON body）
+- `GET {base}/memories?limit=200`：读取最近 N 条记录（返回 `{ ok: true, memories: [...] }`）
+- `GET {base}/healthz`：健康检查（`200` 表示可用）
 
 ## 部署到 Vercel
 
@@ -73,30 +91,174 @@ Vercel 配置提示：
 3. 在 Vercel 配置环境变量（见上）
 4. Deploy
 
-## 推送到 GitHub（手动）
+注意：Vercel 修改 Environment Variables 后，需要 Redeploy 才会生效。
+
+## 使用说明（面向 iPad / 微信）
+
+### 生成故事与播放
+
+1. 在输入框随便敲点字符（越“乱”越好玩）
+2. 点「开始」
+3. 如果能自动播放音频，会直接朗读
+4. 如果 iOS/微信阻止自动播放：点一下右侧喇叭按钮（或随便点一下屏幕），再试一次
+
+### 海皮老师语音对话（按住说话）
+
+生成故事后右侧会出现对话区：
+
+- 按住说话（录音），松开后发送
+- 需要麦克风权限（微信内置浏览器也可以授权）
+- 录音会在浏览器端尽量转为 WAV（单声道 / 16kHz / 最长 8 秒）再上传，以兼容语音模型接口
+- 如果语音上游不接受音频输入：服务端会自动回退到“文本模型回答 + TTS 合成”，对话不中断
+
+## 成长记录（后台）
+
+记录内容：
+
+- 每次生成故事：写入「seed + story」
+- 每次对话：写入「seed + story + 孩子输入（文字或语音标记）+ 海皮回复」
+
+查看方式：
+
+- 打开 `/admin`，输入 `STORY_ADMIN_TOKEN`，点击加载
+- 或直接调用：`GET /api/memories?limit=200`，请求头带 `Authorization: Bearer <STORY_ADMIN_TOKEN>`
+
+## API 说明（排查/对接用）
+
+> 所有接口都返回 JSON；错误时 `ok: false`，并带 `error` 字段。
+
+### `POST /api/generate`
+
+只生成故事文字（不做 TTS）。
+
+请求：
 
 ```bash
-git status
-git add .
-git commit -m "init: pink story toy"
-git branch -M main
-git remote add origin https://github.com/<you>/<repo>.git
-git push -u origin main
+curl -sS -X POST http://localhost:3000/api/generate \
+  -H "Content-Type: application/json" \
+  -d "{\"seed\":\"qwe🙂123\"}"
 ```
 
-## 代码入口
+响应（成功）：
+
+```json
+{ "ok": true, "story": "……", "requestId": "..." }
+```
+
+响应（失败）：
+
+```json
+{ "ok": false, "error": "Missing env: ZHIPU_API_KEY" }
+```
+
+### `POST /api/generate-en`
+
+只生成英文故事文字（不做 TTS）。与 `/api/generate` 配合用于双语展示与英文朗读。
+
+请求：
+
+```bash
+curl -sS -X POST http://localhost:3000/api/generate-en \
+  -H "Content-Type: application/json" \
+  -d "{\"seed\":\"qwe🙂123\"}"
+```
+
+### `POST /api/tts`
+
+把故事文字合成语音（默认返回 `wav` 的 base64）。
+
+请求：
+
+```bash
+curl -sS -X POST http://localhost:3000/api/tts \
+  -H "Content-Type: application/json" \
+  -d "{\"story\":\"森林里啾啾响。小兔有个小愿望。……\",\"lang\":\"zh\"}"
+```
+
+响应（成功）：
+
+```json
+{ "ok": true, "audioBase64": "...", "audioMime": "audio/wav", "lang": "zh", "requestId": "..." }
+```
+
+如果未配置 `ZHIPU_TTS_MODEL`，接口会返回 `400` 并提示缺少配置；UI 会自动回退到系统朗读。
+
+### `POST /api/chat`
+
+围绕故事做多轮对话。支持文字输入或语音输入（base64）。通过 `lang` 跟随中文/英文。
+
+请求（文字）：
+
+```bash
+curl -sS -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d "{\"lang\":\"zh\",\"story\":\"……\",\"seed\":\"abc\",\"history\":[],\"inputText\":\"我喜欢小兔\"}"
+```
+
+响应（成功）：
+
+```json
+{
+  "ok": true,
+  "conversationId": "...",
+  "assistantText": "……",
+  "assistantAudioBase64": "...",
+  "assistantAudioMime": "audio/wav",
+  "requestId": "..."
+}
+```
+
+说明：
+
+- 优先走“语音对话上游”（`ZHIPU_VOICE_MODEL`）；上游失败会自动降级到文本模型，再用 TTS 补音频（若配置了 `ZHIPU_TTS_MODEL`）
+- 响应头会带 `x-haipi-upstream: voice|chat_fallback`（方便排查）
+
+### `GET /api/memories`
+
+读取成长记录（需要管理员 token）。
+
+```bash
+curl -sS "http://localhost:3000/api/memories?limit=200" \
+  -H "Authorization: Bearer <STORY_ADMIN_TOKEN>"
+```
+
+### `GET /api/health`
+
+查看线上环境变量缺失情况 + 远端存储健康状态（不会返回密钥本身）。
+
+```bash
+curl -sS "http://localhost:3000/api/health?token=<STORY_ADMIN_TOKEN>"
+```
+
+## 目录结构（关键文件）
 
 - UI：`src/components/StoryToy.tsx`
-- 语音对话接口：`src/app/api/chat/route.ts`
-- 生成故事接口：`src/app/api/generate/route.ts`
-- TTS 接口：`src/app/api/tts/route.ts`
-- 成长记录接口：`src/app/api/memories/route.ts`
+- 页面：`src/app/page.tsx`、`src/app/layout.tsx`、`src/app/globals.css`
+- 生成故事：`src/app/api/generate/route.ts`
+- 生成英文故事：`src/app/api/generate-en/route.ts`
+- TTS：`src/app/api/tts/route.ts`
+- 语音对话：`src/app/api/chat/route.ts`
+- 成长记录：`src/lib/memories.ts`、`src/app/api/memories/route.ts`、`src/app/admin/page.tsx`
 - 健康检查：`src/app/api/health/route.ts`
 - 智谱封装：`src/lib/zhipu.ts`
 
-## 接口说明（给排查用）
+## 常见问题（Troubleshooting）
 
-- `POST /api/generate`：只生成故事文字（不做 TTS）
-- `POST /api/tts`：把故事文字合成语音
-- `POST /api/chat`：围绕故事做语音多轮对话
-- `GET /api/health?token=<STORY_ADMIN_TOKEN>`：查看线上环境变量缺失情况 + 远端存储健康状态（不会返回密钥本身）
+### 1）点了「开始」但没声音
+
+- iOS/微信经常禁止“非用户手势触发”的自动播放：点一下喇叭按钮或随便点一下屏幕再试
+- 未配置 `ZHIPU_TTS_MODEL` 时，服务端 TTS 会不可用：UI 会回退到系统朗读（如果设备支持）
+
+### 2）按住说话没反应 / 一直卡在“正在发送”
+
+- 先确认麦克风权限已授予
+- 部分 iOS/微信对 `MediaRecorder` 兼容较差：前端有 watchdog 与降级文案，仍可继续对话
+
+### 3）Vercel 上成长记录为空
+
+- Vercel 无持久化磁盘：请使用远端日志服务（`STORY_REMOTE_LOG_URL` + `STORY_REMOTE_LOG_TOKEN`）或换带持久化的部署环境
+
+## 安全提示
+
+- `STORY_ADMIN_TOKEN` 等同于后台权限，请妥善保管，不要写进前端代码或提交到 Git
+- 本项目不会在接口返回中暴露 `ZHIPU_API_KEY`，但你仍应把密钥仅配置在服务端环境变量中

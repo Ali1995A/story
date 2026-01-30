@@ -6,8 +6,12 @@ export type MemoryEntry = {
   id: string;
   createdAt: string;
   kind?: "story" | "chat";
+  lang?: "zh" | "en";
+  generationId?: string;
   seed: string;
   story: string;
+  storyZh?: string;
+  storyEn?: string;
   requestId?: string;
   hasAudio: boolean;
   conversationId?: string;

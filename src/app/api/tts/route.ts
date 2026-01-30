@@ -8,6 +8,7 @@ type OkResponse = {
   ok: true;
   audioBase64: string;
   audioMime: string;
+  lang: "zh" | "en";
   requestId?: string;
 };
 
@@ -40,9 +41,17 @@ export async function POST(req: Request) {
     const ttsEndpoint =
       process.env.ZHIPU_TTS_ENDPOINT?.trim() ||
       "https://open.bigmodel.cn/api/paas/v4/audio/speech";
-    const ttsVoice = process.env.ZHIPU_TTS_VOICE?.trim() || undefined;
 
-    const body = (await req.json().catch(() => ({}))) as { story?: unknown };
+    const body = (await req.json().catch(() => ({}))) as {
+      story?: unknown;
+      lang?: unknown;
+    };
+    const langRaw = typeof body.lang === "string" ? body.lang.trim() : "";
+    const lang: "zh" | "en" = langRaw === "en" ? "en" : "zh";
+    const ttsVoice =
+      (lang === "en"
+        ? process.env.STORY_EN_TTS_VOICE?.trim()
+        : process.env.ZHIPU_TTS_VOICE?.trim()) || undefined;
     const storyRaw = typeof body.story === "string" ? body.story : "";
     const story = clampText(storyRaw, 900);
     if (!story) {
@@ -70,7 +79,13 @@ export async function POST(req: Request) {
     requestId = tts.requestId ?? requestId;
 
     return NextResponse.json<OkResponse>(
-      { ok: true, audioBase64: tts.audioBase64, audioMime: tts.audioMime, requestId },
+      {
+        ok: true,
+        audioBase64: tts.audioBase64,
+        audioMime: tts.audioMime,
+        lang,
+        requestId,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
