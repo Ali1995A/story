@@ -234,6 +234,102 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+type QualityResult = { ok: boolean; reasons: string[] };
+
+function includesAny(haystack: string, needles: string[]) {
+  for (const n of needles) {
+    if (n && haystack.includes(n)) return true;
+  }
+  return false;
+}
+
+function countIncludes(haystack: string, needles: string[]) {
+  let count = 0;
+  for (const n of needles) {
+    if (n && haystack.includes(n)) count += 1;
+  }
+  return count;
+}
+
+function qualityCheckZh(story: string): QualityResult {
+  const s = story.trim();
+  const reasons: string[] = [];
+
+  const sentences = s
+    .split("。")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (sentences.length < 6 || sentences.length > 10) reasons.push("zh_sentence_count");
+
+  const hasMotivation = includesAny(s, ["小愿望", "想", "要", "准备"]);
+  if (!hasMotivation) reasons.push("zh_missing_motivation");
+
+  const hasObstacle = includesAny(s, ["挡", "卡", "过不去", "找不到", "拦住", "绕不过", "打不开"]);
+  if (!hasObstacle) reasons.push("zh_missing_obstacle");
+
+  const hasAction = includesAny(s, ["走", "找", "推", "拉", "跳", "爬", "搬", "拿", "送", "带", "变", "修", "想办法", "帮忙"]);
+  if (!hasAction) reasons.push("zh_missing_action");
+
+  const hasClosure = includesAny(s, ["得到", "找到", "解决", "好了", "开心", "笑", "谢谢", "挥手", "再见", "下次", "约好"]);
+  if (!hasClosure) reasons.push("zh_missing_closure");
+
+  const seriesKeys = ["汪汪队", "旺旺队", "超级飞侠", "小猪佩奇", "巴巴爸爸一家人", "巴巴爸爸"];
+  const seriesCount = countIncludes(s, seriesKeys);
+  if (seriesCount !== 1) reasons.push("zh_series_not_single");
+
+  if (s.includes("汪汪队") || s.includes("旺旺队")) {
+    if (!includesAny(s, ["救援", "任务", "装备", "工具", "帮忙", "出动"])) reasons.push("zh_pawpatrol_missing_motif");
+  } else if (s.includes("超级飞侠")) {
+    if (!includesAny(s, ["快递", "包裹", "送", "礼物", "投递", "带来"])) reasons.push("zh_superwings_missing_motif");
+  } else if (s.includes("小猪佩奇")) {
+    if (!includesAny(s, ["爸爸", "妈妈", "乔治", "弟弟", "家", "公园", "泥", "跳", "玩"])) reasons.push("zh_peppa_missing_motif");
+  } else if (s.includes("巴巴爸爸一家人") || s.includes("巴巴爸爸")) {
+    if (!includesAny(s, ["变", "变形", "变成"])) reasons.push("zh_barbapapa_missing_motif");
+  }
+
+  return { ok: reasons.length === 0, reasons };
+}
+
+function qualityCheckEn(story: string): QualityResult {
+  const sRaw = story.trim();
+  const s = sRaw.toLowerCase();
+  const reasons: string[] = [];
+
+  const sentences = sRaw
+    .split(".")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  if (sentences.length < 6 || sentences.length > 10) reasons.push("en_sentence_count");
+
+  const hasMotivation = includesAny(s, ["wish", "wants", "want", "plans", "needs"]);
+  if (!hasMotivation) reasons.push("en_missing_motivation");
+
+  const hasObstacle = includesAny(s, ["blocked", "stuck", "cannot", "cant", "lost", "no way"]);
+  if (!hasObstacle) reasons.push("en_missing_obstacle");
+
+  const hasAction = includesAny(s, ["help", "helps", "bring", "brings", "deliver", "delivers", "use", "uses", "build", "builds", "shape", "shapes", "turn", "turns", "change", "changes"]);
+  if (!hasAction) reasons.push("en_missing_action");
+
+  const hasClosure = includesAny(s, ["gets", "finds", "fixed", "happy", "smile", "thanks", "wave", "next time"]);
+  if (!hasClosure) reasons.push("en_missing_closure");
+
+  const seriesKeys = ["paw patrol", "super wings", "peppa pig", "barbapapa family", "barbapapa"];
+  const seriesCount = countIncludes(s, seriesKeys);
+  if (seriesCount !== 1) reasons.push("en_series_not_single");
+
+  if (s.includes("paw patrol")) {
+    if (!includesAny(s, ["rescue", "mission", "team", "tool", "help"])) reasons.push("en_pawpatrol_missing_motif");
+  } else if (s.includes("super wings")) {
+    if (!includesAny(s, ["deliver", "delivery", "package", "bring"])) reasons.push("en_superwings_missing_motif");
+  } else if (s.includes("peppa pig")) {
+    if (!includesAny(s, ["family", "mummy", "daddy", "george", "park", "mud", "play"])) reasons.push("en_peppa_missing_motif");
+  } else if (s.includes("barbapapa family") || s.includes("barbapapa")) {
+    if (!includesAny(s, ["shape", "transform", "turns into", "changes into"])) reasons.push("en_barbapapa_missing_motif");
+  }
+
+  return { ok: reasons.length === 0, reasons };
+}
+
 export async function POST(req: Request) {
   let requestId: string | undefined;
   try {
@@ -308,36 +404,86 @@ export async function POST(req: Request) {
       "",
       "叙述方式：",
       "- 不能出现任何直接对话格式（不要引号）",
+      "",
+      "结构硬约束（两种语言都要满足）：",
+      "- 你写的每一句都必须是剧情推进句，不能只凑数形容",
+      "- 必须明确写出：主角想要什么或要做什么、遇到的阻碍、尝试或想办法、动画元素的主动帮助、解决方式、最后的小收获或收束",
+      "- 道具或能力不能凭空出现：必须交代是谁带来/送来/找到/变出来，并且用于解决阻碍",
     ].join("\n");
 
-    const { content, requestId: chatReqId } = await zhipuChatCompletions({
-      apiKey,
-      model: chatModel,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: `种子：${seed}` },
-      ],
-      temperature: 0.9,
-      top_p: 0.9,
-      max_tokens: 900,
-      thinking: { type: "disabled" },
-      timeoutMs: Number(
-        process.env.ZHIPU_CHAT_TIMEOUT_MS ??
-          process.env.ZHIPU_TIMEOUT_MS ??
-          (process.env.VERCEL ? "9000" : "30000"),
-      ),
-    });
-    requestId = chatReqId ?? requestId;
+    const systemRetry = [
+      system,
+      "",
+      "质量自检（不达标就全部重写）：",
+      "- 中文必须只出现 1 个系列名（汪汪队/旺旺队/超级飞侠/小猪佩奇/巴巴爸爸一家人），并且该系列要参与关键解决步骤",
+      "- 英文必须只出现 1 个系列名（Paw Patrol/Super Wings/Peppa Pig/Barbapapa family），并且该系列要参与关键解决步骤",
+      "- 不要出现“路过一下就结束”的角色，不要用万能句糊弄",
+      "- 句子之间要有因果连接：阻碍要和目标有关，解决要和道具有关",
+    ].join("\n");
 
-    const parsed = safeJsonParse(content);
-    const rec = asRecord(parsed);
-    const zhRaw = typeof rec?.storyZh === "string" ? rec.storyZh : "";
-    const enRaw = typeof rec?.storyEn === "string" ? rec.storyEn : "";
+    const timeoutMs = Number(
+      process.env.ZHIPU_CHAT_TIMEOUT_MS ??
+        process.env.ZHIPU_TIMEOUT_MS ??
+        (process.env.VERCEL ? "9000" : "30000"),
+    );
 
-    let storyZh = sanitizeStrictZhStory(clampText(zhRaw, 900));
-    let storyEn = sanitizeStrictEnglishStory(clampText(enRaw, 900));
-    if (!storyZh) storyZh = fallbackStrictZhStory(seed);
-    if (!storyEn) storyEn = fallbackStrictEnglishStory(seed);
+    const callUpstream = async (prompt: string) => {
+      const { content, requestId: chatReqId } = await zhipuChatCompletions({
+        apiKey,
+        model: chatModel,
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: `种子：${seed}` },
+        ],
+        temperature: 0.9,
+        top_p: 0.9,
+        max_tokens: 900,
+        thinking: { type: "disabled" },
+        timeoutMs,
+      });
+      requestId = chatReqId ?? requestId;
+      return content;
+    };
+
+    let storyZh = "";
+    let storyEn = "";
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const prompt = attempt === 1 ? system : systemRetry;
+      const content = await callUpstream(prompt);
+
+      const parsed = safeJsonParse(content);
+      const rec = asRecord(parsed);
+      const zhRaw = typeof rec?.storyZh === "string" ? rec.storyZh : "";
+      const enRaw = typeof rec?.storyEn === "string" ? rec.storyEn : "";
+
+      let nextZh = sanitizeStrictZhStory(clampText(zhRaw, 900));
+      let nextEn = sanitizeStrictEnglishStory(clampText(enRaw, 900));
+
+      let fellBackThisRound = false;
+      if (!nextZh) {
+        nextZh = fallbackStrictZhStory(seed);
+        fellBackThisRound = true;
+      }
+      if (!nextEn) {
+        nextEn = fallbackStrictEnglishStory(seed);
+        fellBackThisRound = true;
+      }
+
+      const qZh = qualityCheckZh(nextZh);
+      const qEn = qualityCheckEn(nextEn);
+      const ok = qZh.ok && qEn.ok && !fellBackThisRound;
+
+      storyZh = nextZh;
+      storyEn = nextEn;
+
+      if (ok) break;
+      if (attempt === 2) {
+        if (!qZh.ok) storyZh = fallbackStrictZhStory(seed);
+        if (!qEn.ok) storyEn = fallbackStrictEnglishStory(seed);
+        break;
+      }
+    }
 
     const ipFromHeaders =
       req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
