@@ -310,9 +310,19 @@ function qualityCheckZh(story: string): QualityResult {
 
   const hasClosure = includesAny(s, ["得到", "找到", "解决", "好了", "开心", "笑", "谢谢", "挥手", "再见", "下次", "约好"]);
   if (!hasClosure) reasons.push("zh_missing_closure");
+  const lastSentence = sentences[sentences.length - 1] ?? "";
+  const lastHasClosure = includesAny(lastSentence, ["开心", "笑", "谢谢", "挥手", "再见", "下次", "约好", "得到", "找到"]);
+  if (!lastHasClosure) reasons.push("zh_last_sentence_not_closure");
 
   const pausePunct = (s.match(/[，、]/g) ?? []).length;
   if (pausePunct < 1) reasons.push("zh_missing_pause_punct");
+
+  const hasCausal = includesAny(s, ["于是", "所以", "因为", "结果", "后来", "这时", "只好"]);
+  if (!hasCausal) reasons.push("zh_missing_causal");
+
+  if (includesAny(s, ["要谢谢", "说要谢谢"]) || /说要(帮忙|勇敢|耐心|分享|谢谢)/.test(s)) {
+    reasons.push("zh_forced_theme_phrase");
+  }
 
   const themeWords = ["帮忙", "勇敢", "耐心", "分享", "谢谢"];
   const themeHit = themeWords.some((w) => s.includes(w));
@@ -330,6 +340,14 @@ function qualityCheckZh(story: string): QualityResult {
     undefined;
   if (!mainSeries) reasons.push("zh_missing_series");
 
+  // Main series should actively help, not just cameo.
+  if (
+    mainSeries &&
+    !includesAny(s, ["帮忙", "想办法", "送来", "送到", "出动", "变成", "变形", "带来", "修", "救援"])
+  ) {
+    reasons.push("zh_main_series_not_helping");
+  }
+
   if (mainSeries === "汪汪队" || mainSeries === "旺旺队") {
     if (!includesAny(s, ["救援", "任务", "装备", "工具", "帮忙", "出动"])) reasons.push("zh_pawpatrol_missing_motif");
   } else if (mainSeries === "超级飞侠") {
@@ -340,7 +358,9 @@ function qualityCheckZh(story: string): QualityResult {
     if (!hasToolOrParcel) reasons.push("zh_superwings_missing_tool");
     if (!hasUse) reasons.push("zh_superwings_missing_use");
   } else if (mainSeries === "小猪佩奇") {
-    if (!includesAny(s, ["爸爸", "妈妈", "乔治", "弟弟", "家", "公园", "泥", "跳", "玩"])) reasons.push("zh_peppa_missing_motif");
+    if (!includesAny(s, ["爸爸", "妈妈", "乔治", "弟弟"])) reasons.push("zh_peppa_missing_family");
+    if (!includesAny(s, ["家", "公园", "泥", "雨靴", "跳", "滑梯", "野餐"])) reasons.push("zh_peppa_missing_daily_scene");
+    if (!includesAny(s, ["帮忙", "想办法", "一起", "试一试"])) reasons.push("zh_peppa_missing_help_action");
   } else if (mainSeries === "巴巴爸爸一家人" || mainSeries === "巴巴爸爸") {
     const hasTransform = includesAny(s, ["变形", "变成", "变出", "变"]);
     const hasIntoThing = includesAny(s, ["变成梯", "变成桥", "变成船", "变成伞", "变成网", "变成车", "变成绳", "变成钩"]);
@@ -376,6 +396,12 @@ function qualityCheckEn(story: string): QualityResult {
 
   const hasClosure = includesAny(s, ["gets", "finds", "fixed", "happy", "smile", "thanks", "wave", "next time"]);
   if (!hasClosure) reasons.push("en_missing_closure");
+  const lastSentence = (sentences[sentences.length - 1] ?? "").toLowerCase();
+  const lastHasClosure = includesAny(lastSentence, ["happy", "smile", "thanks", "wave", "next time", "gets", "finds"]);
+  if (!lastHasClosure) reasons.push("en_last_sentence_not_closure");
+
+  const hasCausal = includesAny(s, ["so", "because", "then", "later"]);
+  if (!hasCausal) reasons.push("en_missing_causal");
 
   const themeWords = ["help", "brave", "patient", "share", "thanks"];
   const themeHit = themeWords.some((w) => s.includes(w));
@@ -393,6 +419,13 @@ function qualityCheckEn(story: string): QualityResult {
     undefined;
   if (!mainSeries) reasons.push("en_missing_series");
 
+  if (
+    mainSeries &&
+    !includesAny(s, ["help", "team", "deliver", "package", "transform", "turns into", "changes into", "use", "uses", "bring", "brings"])
+  ) {
+    reasons.push("en_main_series_not_helping");
+  }
+
   if (mainSeries === "paw patrol") {
     if (!includesAny(s, ["rescue", "mission", "team", "tool", "help"])) reasons.push("en_pawpatrol_missing_motif");
   } else if (mainSeries === "super wings") {
@@ -403,7 +436,9 @@ function qualityCheckEn(story: string): QualityResult {
     if (!hasToolOrParcel) reasons.push("en_superwings_missing_tool");
     if (!hasUse) reasons.push("en_superwings_missing_use");
   } else if (mainSeries === "peppa pig") {
-    if (!includesAny(s, ["family", "mummy", "daddy", "george", "park", "mud", "play"])) reasons.push("en_peppa_missing_motif");
+    if (!includesAny(s, ["mummy", "daddy", "george", "family"])) reasons.push("en_peppa_missing_family");
+    if (!includesAny(s, ["park", "mud", "boots", "picnic", "home"])) reasons.push("en_peppa_missing_daily_scene");
+    if (!includesAny(s, ["help", "try", "idea", "together"])) reasons.push("en_peppa_missing_help_action");
   } else if (mainSeries === "barbapapa family" || mainSeries === "barbapapa") {
     const hasTransform = includesAny(s, ["shape", "transform", "turns into", "changes into"]);
     const hasIntoThing = includesAny(s, ["into a ladder", "into a bridge", "into a boat", "into an umbrella", "into a net", "into a rope", "into a hook"]);
@@ -499,6 +534,10 @@ export async function POST(req: Request) {
       "- 必须出现至少一次转折词来体现尝试与困难：中文用“可是/但是/却/怎么也/还是”，英文用“but/however/still”",
       "- 如果选了“超级飞侠 / Super Wings”：必须出现投递语义（送来/送到/包裹/快递/deliver/package），并且投递来的小物件必须被用来解决阻碍",
       "- 如果选了“巴巴爸爸一家人 / Barbapapa family”：必须出现明确的变形成某个具体物件（例如变成梯子/桥/船/伞/网）并用于解决阻碍",
+      "- 必须出现至少一个因果连接词让逻辑闭环：中文用“于是/所以/因为/结果/后来/这时”，英文用“so/because/then/later”",
+      "- 末句必须收束：要么表达开心+谢谢，要么挥手再见+约好下次，并把主题词再说一次",
+      "- 主题词不要生硬写成“说要谢谢/说要勇敢”这类口号句式，要写成真正的行动或感受",
+      "- 主系列不能只路过：主系列必须参与关键解决步骤（出动救援/投递工具/日常一起想办法/变形成物件）",
     ].join("\n");
 
     const systemRetry = [
