@@ -69,15 +69,18 @@ function fallbackStrictZhStory(seed: string) {
   ];
   const sounds = ["啾啾", "咕噜", "呼呼", "叮叮", "哗啦", "咚咚", "沙沙", "噗噗"];
   const helpers = ["小鸟", "小青蛙", "小刺猬", "小海豹", "小瓢虫", "小松鼠"];
-  const obstacles = ["小水坑", "迷路弯", "滑滑泥", "大叶门", "风呼呼", "雨点点"];
+  const obstacles = ["小水坑", "迷路弯", "滑滑泥", "大叶门", "风呼呼", "雨点点", "大坑", "大石头"];
   const magics = ["发光", "变色", "唱歌", "跳舞", "飘起来", "变软软", "变圆圆"];
   const rewards = ["一颗星星", "一朵小花", "一个拥抱", "一枚徽章", "一块小饼"];
   const showHooks = [
-    { name: "旺旺队", vibe: "救援" },
-    { name: "超级飞侠", vibe: "送快递" },
-    { name: "小猪佩奇", vibe: "日常" },
-    { name: "巴巴爸爸一家人", vibe: "变形" },
+    { name: "旺旺队", vibe: "救援" as const },
+    { name: "超级飞侠", vibe: "送快递" as const },
+    { name: "小猪佩奇", vibe: "日常" as const },
+    { name: "巴巴爸爸一家人", vibe: "变形" as const },
   ];
+  const themeWords = ["帮忙", "勇敢", "耐心", "分享", "谢谢"];
+  const transformThings = ["梯子", "小桥", "小船", "小伞", "小网", "小绳", "小钩"];
+  const deliveryTools = ["小绳钩", "小夹子", "小梯子", "小网兜", "小风扇"];
 
   const place = stableChoice(`${seed}-p`, places);
   const animal = stableChoice(seed, animals);
@@ -88,31 +91,40 @@ function fallbackStrictZhStory(seed: string) {
   const magic = stableChoice(`${seed}-m`, magics);
   const reward = stableChoice(`${seed}-r`, rewards);
   const hook = stableChoice(`${seed}-show`, showHooks);
-  const hookLine =
+  const theme = stableChoice(`${seed}-t`, themeWords);
+  const transformThing = stableChoice(`${seed}-bt`, transformThings);
+  const deliveryTool = stableChoice(`${seed}-dt`, deliveryTools);
+
+  const hookLines =
     hook.vibe === "救援"
-      ? `${hook.name}来帮忙。`
+      ? [`${hook.name}出动救援。`, `它们分工${theme}。`, `它们带来小工具。`]
       : hook.vibe === "送快递"
-        ? `${hook.name}送来礼物。`
+        ? [`${hook.name}送来快递。`, `包裹里有${deliveryTool}。`, `它说快递准时到。`]
         : hook.vibe === "日常"
-          ? `${hook.name}一起玩。`
-          : `${hook.name}变出办法。`;
+          ? [`${hook.name}在这里玩。`, `它们先试一试，可是还不行。`, `它们说要${theme}。`]
+          : [`${hook.name}变形帮忙。`, `它变成${transformThing}。`, `它说${theme}最重要。`];
 
   const lines = [
     `${place}里，${s1}响。`,
     `${animal}有个小愿望。`,
-    `它要找${item}。`,
-    `路上有${obstacle}。`,
-    hookLine,
-    `${helper}也来帮忙。`,
-    `它们想个小办法，慢慢来。`,
-    `${item}忽然${magic}。`,
-    `问题一下就好了。`,
+    `它想找${item}。`,
+    `可是路上有${obstacle}。`,
+    `${animal}试一试，却还是不行。`,
+    hookLines[0] ?? `${hook.name}来帮忙。`,
+    hookLines[1] ?? `${helper}也来帮忙。`,
+    hookLines[2] ?? `它们用${theme}想办法。`,
+    hook.vibe === "送快递"
+      ? `它用${deliveryTool}拿到${item}。`
+      : hook.vibe === "变形"
+        ? `它们用${transformThing}拿到${item}。`
+        : `它们一起拿到${item}。`,
+    `${item}忽然${magic}，亮亮的。`,
+    `小麻烦解决了，大家笑。`,
     `${animal}得到${reward}。`,
-    `大家挥手说再见。`,
+    `它说${theme}${theme}，谢谢。`,
   ];
 
-  const count = Math.max(6, Math.min(10, 6 + (seed.length % 5)));
-  return lines.slice(0, count).join("");
+  return lines.slice(0, 10).join("");
 }
 
 function sanitizeStrictEnglishStory(story: string) {
@@ -164,51 +176,61 @@ function fallbackStrictEnglishStory(seed: string) {
     "tap tap",
     "puff puff",
   ];
-  const helpers = ["Bird", "Frog", "Hedgehog", "Seal", "Ladybug", "Sparrow"];
   const obstacles = ["a small puddle", "a windy path", "a tricky turn", "a sticky spot", "a big leaf gate"];
   const magics = ["glows", "changes color", "sings", "dances", "floats up", "gets soft"];
   const rewards = ["a tiny star", "a small flower", "a warm hug", "a little badge", "a yummy cookie"];
   const showHooks = [
-    { name: "Paw Patrol", vibe: "rescue" },
-    { name: "Super Wings", vibe: "delivery" },
-    { name: "Peppa Pig", vibe: "daily" },
-    { name: "Barbapapa family", vibe: "shape" },
+    { name: "Paw Patrol", vibe: "rescue" as const },
+    { name: "Super Wings", vibe: "delivery" as const },
+    { name: "Peppa Pig", vibe: "daily" as const },
+    { name: "Barbapapa family", vibe: "shape" as const },
   ];
+  const themeWords = ["help", "brave", "patient", "share", "thanks"];
+  const transformThings = ["a ladder", "a bridge", "a boat", "an umbrella", "a net", "a rope", "a hook"];
+  const deliveryTools = ["a rope hook", "a small clip", "a tiny ladder", "a net bag", "a little fan"];
 
   const place = stableChoice(`${seed}-p`, places);
   const animal = stableChoice(seed, animals);
   const item = stableChoice(seed.split("").reverse().join(""), items);
   const s1 = stableChoice(`${seed}-s`, sounds);
-  const helper = stableChoice(`${seed}-h`, helpers);
   const obstacle = stableChoice(`${seed}-o`, obstacles);
   const magic = stableChoice(`${seed}-m`, magics);
   const reward = stableChoice(`${seed}-r`, rewards);
   const hook = stableChoice(`${seed}-show`, showHooks);
-  const hookLine =
+  const theme = stableChoice(`${seed}-t`, themeWords);
+  const transformThing = stableChoice(`${seed}-bt`, transformThings);
+  const deliveryTool = stableChoice(`${seed}-dt`, deliveryTools);
+
+  const hookLines =
     hook.vibe === "rescue"
-      ? `${hook.name} comes to help.`
+      ? [`${hook.name} starts a rescue mission.`, `They work as a team to ${theme}.`, `They bring a small tool.`]
       : hook.vibe === "delivery"
-        ? `${hook.name} brings a small delivery.`
+        ? [`${hook.name} delivers a package.`, `The package has ${deliveryTool}.`, `They say delivery is on time.`]
         : hook.vibe === "daily"
-          ? `${hook.name} joins the play.`
-          : `${hook.name} shapes a smart idea.`;
+          ? [`${hook.name} joins the play.`, `They try once, but it still fails.`, `They stay ${theme} and try again.`]
+          : [`${hook.name} turns into ${transformThing}.`, `They try, but it is still hard.`, `They stay ${theme} and try again.`];
 
   const lines = [
     `In the ${place}, ${s1}.`,
     `${animal} has a small wish.`,
     `${animal} wants to find a ${item}.`,
-    `On the way, there is ${obstacle}.`,
-    hookLine,
-    `${helper} comes to help too.`,
-    `They try a tiny idea.`,
+    `But on the way, there is ${obstacle}.`,
+    `${animal} tries, but still cannot.`,
+    hookLines[0] ?? `${hook.name} comes to help.`,
+    hookLines[1] ?? `They try again.`,
+    hookLines[2] ?? `They stay ${theme} and try again.`,
+    hook.vibe === "delivery"
+      ? `They use ${deliveryTool} to get the ${item}.`
+      : hook.vibe === "shape"
+        ? `They use ${transformThing} to get the ${item}.`
+        : `They get the ${item} together.`,
     `The ${item} suddenly ${magic}.`,
-    `The problem feels easy now.`,
+    `The problem is fixed, and they smile.`,
     `${animal} gets ${reward}.`,
-    `They wave and say see you next time.`,
+    `${animal} says ${theme} ${theme} thanks.`,
   ];
 
-  const count = Math.max(6, Math.min(10, 6 + (seed.length % 5)));
-  return lines.slice(0, count).join(" ");
+  return lines.slice(0, 10).join(" ");
 }
 
 function safeJsonParse(text: string): unknown {
@@ -243,6 +265,19 @@ function includesAny(haystack: string, needles: string[]) {
   return false;
 }
 
+function firstIndexOfAny(haystack: string, needles: string[]) {
+  let best = Number.POSITIVE_INFINITY;
+  let hit: string | undefined;
+  for (const n of needles) {
+    const idx = haystack.indexOf(n);
+    if (idx >= 0 && idx < best) {
+      best = idx;
+      hit = n;
+    }
+  }
+  return hit ? { needle: hit, index: best } : undefined;
+}
+
 function countIncludes(haystack: string, needles: string[]) {
   let count = 0;
   for (const n of needles) {
@@ -259,7 +294,7 @@ function qualityCheckZh(story: string): QualityResult {
     .split("。")
     .map((x) => x.trim())
     .filter(Boolean);
-  if (sentences.length < 6 || sentences.length > 10) reasons.push("zh_sentence_count");
+  if (sentences.length < 8 || sentences.length > 10) reasons.push("zh_sentence_count");
 
   const hasMotivation = includesAny(s, ["小愿望", "想", "要", "准备"]);
   if (!hasMotivation) reasons.push("zh_missing_motivation");
@@ -279,22 +314,34 @@ function qualityCheckZh(story: string): QualityResult {
   const pausePunct = (s.match(/[，、]/g) ?? []).length;
   if (pausePunct < 1) reasons.push("zh_missing_pause_punct");
 
+  const themeWords = ["帮忙", "勇敢", "耐心", "分享", "谢谢"];
+  const themeHit = themeWords.some((w) => s.includes(w));
+  if (!themeHit) reasons.push("zh_missing_theme_word");
+  const themeCount = themeWords.reduce((acc, w) => acc + (s.match(new RegExp(w, "g"))?.length ?? 0), 0);
+  if (themeCount < 2) reasons.push("zh_theme_not_repeated");
+
   const seriesKeys = ["汪汪队", "旺旺队", "超级飞侠", "小猪佩奇", "巴巴爸爸一家人", "巴巴爸爸"];
   const seriesCount = countIncludes(s, seriesKeys);
-  if (seriesCount !== 1) reasons.push("zh_series_not_single");
+  if (seriesCount < 1 || seriesCount > 2) reasons.push("zh_series_count_invalid");
 
-  if (s.includes("汪汪队") || s.includes("旺旺队")) {
+  const mainSeries =
+    firstIndexOfAny(s, ["汪汪队", "旺旺队"])?.needle ||
+    firstIndexOfAny(s, ["超级飞侠", "小猪佩奇", "巴巴爸爸一家人", "巴巴爸爸"])?.needle ||
+    undefined;
+  if (!mainSeries) reasons.push("zh_missing_series");
+
+  if (mainSeries === "汪汪队" || mainSeries === "旺旺队") {
     if (!includesAny(s, ["救援", "任务", "装备", "工具", "帮忙", "出动"])) reasons.push("zh_pawpatrol_missing_motif");
-  } else if (s.includes("超级飞侠")) {
+  } else if (mainSeries === "超级飞侠") {
     const hasDelivery = includesAny(s, ["快递", "包裹", "投递", "送到", "送来", "带来"]);
     const hasToolOrParcel = includesAny(s, ["小物件", "工具", "夹子", "绳", "钩", "梯", "盒", "包裹", "快递"]);
     const hasUse = includesAny(s, ["用", "拿来", "拿着", "装上", "打开"]);
     if (!hasDelivery) reasons.push("zh_superwings_missing_delivery");
     if (!hasToolOrParcel) reasons.push("zh_superwings_missing_tool");
     if (!hasUse) reasons.push("zh_superwings_missing_use");
-  } else if (s.includes("小猪佩奇")) {
+  } else if (mainSeries === "小猪佩奇") {
     if (!includesAny(s, ["爸爸", "妈妈", "乔治", "弟弟", "家", "公园", "泥", "跳", "玩"])) reasons.push("zh_peppa_missing_motif");
-  } else if (s.includes("巴巴爸爸一家人") || s.includes("巴巴爸爸")) {
+  } else if (mainSeries === "巴巴爸爸一家人" || mainSeries === "巴巴爸爸") {
     const hasTransform = includesAny(s, ["变形", "变成", "变出", "变"]);
     const hasIntoThing = includesAny(s, ["变成梯", "变成桥", "变成船", "变成伞", "变成网", "变成车", "变成绳", "变成钩"]);
     if (!hasTransform) reasons.push("zh_barbapapa_missing_transform");
@@ -313,7 +360,7 @@ function qualityCheckEn(story: string): QualityResult {
     .split(".")
     .map((x) => x.trim())
     .filter(Boolean);
-  if (sentences.length < 6 || sentences.length > 10) reasons.push("en_sentence_count");
+  if (sentences.length < 8 || sentences.length > 10) reasons.push("en_sentence_count");
 
   const hasMotivation = includesAny(s, ["wish", "wants", "want", "plans", "needs"]);
   if (!hasMotivation) reasons.push("en_missing_motivation");
@@ -330,22 +377,34 @@ function qualityCheckEn(story: string): QualityResult {
   const hasClosure = includesAny(s, ["gets", "finds", "fixed", "happy", "smile", "thanks", "wave", "next time"]);
   if (!hasClosure) reasons.push("en_missing_closure");
 
+  const themeWords = ["help", "brave", "patient", "share", "thanks"];
+  const themeHit = themeWords.some((w) => s.includes(w));
+  if (!themeHit) reasons.push("en_missing_theme_word");
+  const themeCount = themeWords.reduce((acc, w) => acc + (s.match(new RegExp(w, "g"))?.length ?? 0), 0);
+  if (themeCount < 2) reasons.push("en_theme_not_repeated");
+
   const seriesKeys = ["paw patrol", "super wings", "peppa pig", "barbapapa family", "barbapapa"];
   const seriesCount = countIncludes(s, seriesKeys);
-  if (seriesCount !== 1) reasons.push("en_series_not_single");
+  if (seriesCount < 1 || seriesCount > 2) reasons.push("en_series_count_invalid");
 
-  if (s.includes("paw patrol")) {
+  const mainSeries =
+    firstIndexOfAny(s, ["paw patrol"])?.needle ||
+    firstIndexOfAny(s, ["super wings", "peppa pig", "barbapapa family", "barbapapa"])?.needle ||
+    undefined;
+  if (!mainSeries) reasons.push("en_missing_series");
+
+  if (mainSeries === "paw patrol") {
     if (!includesAny(s, ["rescue", "mission", "team", "tool", "help"])) reasons.push("en_pawpatrol_missing_motif");
-  } else if (s.includes("super wings")) {
+  } else if (mainSeries === "super wings") {
     const hasDelivery = includesAny(s, ["deliver", "delivery", "package"]);
     const hasToolOrParcel = includesAny(s, ["package", "tool", "clip", "hook", "rope", "ladder", "box"]);
     const hasUse = includesAny(s, ["use", "uses", "open", "opens", "takes", "attach", "attaches"]);
     if (!hasDelivery) reasons.push("en_superwings_missing_delivery");
     if (!hasToolOrParcel) reasons.push("en_superwings_missing_tool");
     if (!hasUse) reasons.push("en_superwings_missing_use");
-  } else if (s.includes("peppa pig")) {
+  } else if (mainSeries === "peppa pig") {
     if (!includesAny(s, ["family", "mummy", "daddy", "george", "park", "mud", "play"])) reasons.push("en_peppa_missing_motif");
-  } else if (s.includes("barbapapa family") || s.includes("barbapapa")) {
+  } else if (mainSeries === "barbapapa family" || mainSeries === "barbapapa") {
     const hasTransform = includesAny(s, ["shape", "transform", "turns into", "changes into"]);
     const hasIntoThing = includesAny(s, ["into a ladder", "into a bridge", "into a boat", "into an umbrella", "into a net", "into a rope", "into a hook"]);
     if (!hasTransform) reasons.push("en_barbapapa_missing_transform");
@@ -395,29 +454,31 @@ export async function POST(req: Request) {
       "中文故事规则：",
       "- 只能出现中文汉字和中文标点：句号。逗号，顿号、问号？感叹号！",
       "- 禁止空格、英文、数字、表情、引号、括号、书名号、冒号、分号、破折号、省略号、任何特殊符号",
-      "- 全文六到十句，短句为主，每句只说一件事，每句尽量不超过十五个字，每句必须用句号结尾",
+      "- 全文八到十句，短句为主，每句只说一件事，每句尽量不超过五十个字，每句必须用句号结尾",
       "- 不是睡前故事：不要出现晚安、做梦、闭眼、快去睡等内容",
       "- 句子中间可以自然使用逗号或顿号做停顿，且全文至少出现一次逗号或顿号",
+      "- 主题词：在心里从这几个词中选一个并写进故事里至少两次：帮忙、勇敢、耐心、分享、谢谢",
       "",
       "English story rules:",
       "- Use only English letters (A-Z a-z), spaces, commas, periods, question marks, exclamation marks.",
       "- No emojis, numbers, quotes, brackets, colons, semicolons, dashes, ellipses, or special symbols.",
-      "- 6 to 10 sentences. Short sentences. Each sentence ends with a period.",
+      "- 8 to 10 sentences. Short sentences. Each sentence ends with a period.",
       "- Not a bedtime story: do not mention sleep, dreams, good night, or closing eyes.",
+      "- Theme word: choose one and repeat it at least twice: help, brave, patient, share, thanks.",
       "",
       "多样性与内容元素（两种语言故事都要满足）：",
       "- 每次故事必须包含：明确地点、主角小动物、一个具体道具或小魔法、一个小阻碍、一个小收获",
       "- 地点不要总是森林：从这些场景中选 1 个写进去，并在英文里用对应英文表达：森林forest、海边beach、花园flower garden、雪地snowy hill、云朵城cloud city、蘑菇屋mushroom house、彩虹桥rainbow bridge、星星草地star meadow",
       "- “新奇点”必须至少有 1 个，而且每次尽量不同：会唱歌的贝壳、会打嗝的泡泡、会变色的叶子、会跳舞的石头、会发光的帽子、会转圈的铃铛、会变软的云朵、会飞的贴纸",
-      "- 记忆钩子：每次必须融入 1 个孩子熟悉的动画元素（只选 1 个系列，不要混搭多个系列；必须原创剧情，不能复述或改写现成剧集）",
-      "  - 中文故事：只能用中文名，从以下任选 1 个并写进正文：旺旺队、超级飞侠、小猪佩奇、巴巴爸爸一家人",
-      "  - English story: pick 1 and write it in the story text: Paw Patrol, Super Wings, Peppa Pig, Barbapapa family",
+      "- 记忆钩子：每次必须选 1 个主系列融入；允许再加 1 个客串（可选），客串只点到为止，不能抢戏；必须原创剧情，不能复述或改写现成剧集",
+      "  - 中文故事：主系列从以下选 1 个并写进正文：旺旺队、超级飞侠、小猪佩奇、巴巴爸爸一家人；客串最多再选 1 个也写进正文",
+      "  - English story: main series pick 1 and write it in the story text: Paw Patrol, Super Wings, Peppa Pig, Barbapapa family; optional cameo pick at most 1 more",
       "  - 系列典型元素（写法要像“借了感觉”，但剧情必须全新）：",
       "    - 旺旺队 / Paw Patrol：小救援任务、队友分工、工具车或小装备、帮助别人解决小麻烦",
       "    - 超级飞侠 / Super Wings：送快递到某个地方、带来需要的小物件、途中小阻碍、准时送达并开心",
       "    - 小猪佩奇 / Peppa Pig：日常家庭场景、去公园或玩泥巴或小聚会、遇到一点小状况、轻松解决",
       "    - 巴巴爸爸一家人 / Barbapapa family：变形能力当作“解决办法”，把东西变成需要的形状来帮忙",
-      "  - 控制出现方式：点到 1~2 个角色/载具/能力/道具即可；不要出现口号台词；不要提“这一集/动画片里”",
+      "  - 控制出现方式：主系列要参与关键解决步骤；客串最多一句点到，不要出现口号台词；不要提“这一集/动画片里”",
       "- 禁止为了凑句子：每句都必须推动剧情（出现动作或变化），不要连续多句只形容“很开心很漂亮”",
       "- 避免雷同句式：不要反复使用“忽然一片叶子发光”“大家笑得圆圆的”“约好再冒险”等固定模板",
       "- 句子开头尽量变化：不要连续多句都以“它”或同一个主语开头",
@@ -444,8 +505,8 @@ export async function POST(req: Request) {
       system,
       "",
       "质量自检（不达标就全部重写）：",
-      "- 中文必须只出现 1 个系列名（汪汪队/旺旺队/超级飞侠/小猪佩奇/巴巴爸爸一家人），并且该系列要参与关键解决步骤",
-      "- 英文必须只出现 1 个系列名（Paw Patrol/Super Wings/Peppa Pig/Barbapapa family），并且该系列要参与关键解决步骤",
+      "- 中文必须出现 1 个主系列名（汪汪队/旺旺队/超级飞侠/小猪佩奇/巴巴爸爸一家人），可选再出现 1 个客串系列名；主系列要参与关键解决步骤",
+      "- 英文必须出现 1 个主系列名（Paw Patrol/Super Wings/Peppa Pig/Barbapapa family），可选再出现 1 个客串系列名；主系列要参与关键解决步骤",
       "- 不要出现“路过一下就结束”的角色，不要用万能句糊弄",
       "- 句子之间要有因果连接：阻碍要和目标有关，解决要和道具有关",
     ].join("\n");
