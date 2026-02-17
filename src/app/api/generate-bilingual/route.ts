@@ -267,6 +267,9 @@ function qualityCheckZh(story: string): QualityResult {
   const hasObstacle = includesAny(s, ["挡", "卡", "过不去", "找不到", "拦住", "绕不过", "打不开"]);
   if (!hasObstacle) reasons.push("zh_missing_obstacle");
 
+  const hasTry = includesAny(s, ["试", "想办法", "可是", "却", "但是", "还是", "怎么也"]);
+  if (!hasTry) reasons.push("zh_missing_try");
+
   const hasAction = includesAny(s, ["走", "找", "推", "拉", "跳", "爬", "搬", "拿", "送", "带", "变", "修", "想办法", "帮忙"]);
   if (!hasAction) reasons.push("zh_missing_action");
 
@@ -280,11 +283,19 @@ function qualityCheckZh(story: string): QualityResult {
   if (s.includes("汪汪队") || s.includes("旺旺队")) {
     if (!includesAny(s, ["救援", "任务", "装备", "工具", "帮忙", "出动"])) reasons.push("zh_pawpatrol_missing_motif");
   } else if (s.includes("超级飞侠")) {
-    if (!includesAny(s, ["快递", "包裹", "送", "礼物", "投递", "带来"])) reasons.push("zh_superwings_missing_motif");
+    const hasDelivery = includesAny(s, ["快递", "包裹", "投递", "送到", "送来", "带来"]);
+    const hasToolOrParcel = includesAny(s, ["小物件", "工具", "夹子", "绳", "钩", "梯", "盒", "包裹", "快递"]);
+    const hasUse = includesAny(s, ["用", "拿来", "拿着", "装上", "打开"]);
+    if (!hasDelivery) reasons.push("zh_superwings_missing_delivery");
+    if (!hasToolOrParcel) reasons.push("zh_superwings_missing_tool");
+    if (!hasUse) reasons.push("zh_superwings_missing_use");
   } else if (s.includes("小猪佩奇")) {
     if (!includesAny(s, ["爸爸", "妈妈", "乔治", "弟弟", "家", "公园", "泥", "跳", "玩"])) reasons.push("zh_peppa_missing_motif");
   } else if (s.includes("巴巴爸爸一家人") || s.includes("巴巴爸爸")) {
-    if (!includesAny(s, ["变", "变形", "变成"])) reasons.push("zh_barbapapa_missing_motif");
+    const hasTransform = includesAny(s, ["变形", "变成", "变出", "变"]);
+    const hasIntoThing = includesAny(s, ["变成梯", "变成桥", "变成船", "变成伞", "变成网", "变成车", "变成绳", "变成钩"]);
+    if (!hasTransform) reasons.push("zh_barbapapa_missing_transform");
+    if (!hasIntoThing) reasons.push("zh_barbapapa_missing_transform_into");
   }
 
   return { ok: reasons.length === 0, reasons };
@@ -307,6 +318,9 @@ function qualityCheckEn(story: string): QualityResult {
   const hasObstacle = includesAny(s, ["blocked", "stuck", "cannot", "cant", "lost", "no way"]);
   if (!hasObstacle) reasons.push("en_missing_obstacle");
 
+  const hasTry = includesAny(s, ["tries", "try", "but", "still", "however", "cannot", "cant"]);
+  if (!hasTry) reasons.push("en_missing_try");
+
   const hasAction = includesAny(s, ["help", "helps", "bring", "brings", "deliver", "delivers", "use", "uses", "build", "builds", "shape", "shapes", "turn", "turns", "change", "changes"]);
   if (!hasAction) reasons.push("en_missing_action");
 
@@ -320,11 +334,19 @@ function qualityCheckEn(story: string): QualityResult {
   if (s.includes("paw patrol")) {
     if (!includesAny(s, ["rescue", "mission", "team", "tool", "help"])) reasons.push("en_pawpatrol_missing_motif");
   } else if (s.includes("super wings")) {
-    if (!includesAny(s, ["deliver", "delivery", "package", "bring"])) reasons.push("en_superwings_missing_motif");
+    const hasDelivery = includesAny(s, ["deliver", "delivery", "package"]);
+    const hasToolOrParcel = includesAny(s, ["package", "tool", "clip", "hook", "rope", "ladder", "box"]);
+    const hasUse = includesAny(s, ["use", "uses", "open", "opens", "takes", "attach", "attaches"]);
+    if (!hasDelivery) reasons.push("en_superwings_missing_delivery");
+    if (!hasToolOrParcel) reasons.push("en_superwings_missing_tool");
+    if (!hasUse) reasons.push("en_superwings_missing_use");
   } else if (s.includes("peppa pig")) {
     if (!includesAny(s, ["family", "mummy", "daddy", "george", "park", "mud", "play"])) reasons.push("en_peppa_missing_motif");
   } else if (s.includes("barbapapa family") || s.includes("barbapapa")) {
-    if (!includesAny(s, ["shape", "transform", "turns into", "changes into"])) reasons.push("en_barbapapa_missing_motif");
+    const hasTransform = includesAny(s, ["shape", "transform", "turns into", "changes into"]);
+    const hasIntoThing = includesAny(s, ["into a ladder", "into a bridge", "into a boat", "into an umbrella", "into a net", "into a rope", "into a hook"]);
+    if (!hasTransform) reasons.push("en_barbapapa_missing_transform");
+    if (!hasIntoThing) reasons.push("en_barbapapa_missing_transform_into");
   }
 
   return { ok: reasons.length === 0, reasons };
@@ -409,6 +431,9 @@ export async function POST(req: Request) {
       "- 你写的每一句都必须是剧情推进句，不能只凑数形容",
       "- 必须明确写出：主角想要什么或要做什么、遇到的阻碍、尝试或想办法、动画元素的主动帮助、解决方式、最后的小收获或收束",
       "- 道具或能力不能凭空出现：必须交代是谁带来/送来/找到/变出来，并且用于解决阻碍",
+      "- 必须出现至少一次转折词来体现尝试与困难：中文用“可是/但是/却/怎么也/还是”，英文用“but/however/still”",
+      "- 如果选了“超级飞侠 / Super Wings”：必须出现投递语义（送来/送到/包裹/快递/deliver/package），并且投递来的小物件必须被用来解决阻碍",
+      "- 如果选了“巴巴爸爸一家人 / Barbapapa family”：必须出现明确的变形成某个具体物件（例如变成梯子/桥/船/伞/网）并用于解决阻碍",
     ].join("\n");
 
     const systemRetry = [
