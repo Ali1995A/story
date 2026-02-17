@@ -40,13 +40,13 @@ function sanitizeStrictZhStory(story: string) {
   let s = story.replace(/\s+/g, "");
   s = s.replace(/[？！]/g, "。");
   // Keep only CJK ideographs + allowed punctuation.
-  s = s.replace(/[^\u4e00-\u9fff。，？！]/g, "");
+  s = s.replace(/[^\u4e00-\u9fff。，？！、]/g, "");
   // Enforce "。"-only sentence ending requirement.
   s = s.replace(/[？！]/g, "。");
 
   const sentences = s
     .split("。")
-    .map((x) => x.replace(/，+$/g, ""))
+    .map((x) => x.replace(/[，、]+$/g, ""))
     .filter((x) => x.length > 0)
     .slice(0, 10);
 
@@ -98,13 +98,13 @@ function fallbackStrictZhStory(seed: string) {
           : `${hook.name}变出办法。`;
 
   const lines = [
-    `${place}里${s1}响。`,
+    `${place}里，${s1}响。`,
     `${animal}有个小愿望。`,
     `它要找${item}。`,
     `路上有${obstacle}。`,
     hookLine,
     `${helper}也来帮忙。`,
-    `它们想个小办法。`,
+    `它们想个小办法，慢慢来。`,
     `${item}忽然${magic}。`,
     `问题一下就好了。`,
     `${animal}得到${reward}。`,
@@ -276,6 +276,9 @@ function qualityCheckZh(story: string): QualityResult {
   const hasClosure = includesAny(s, ["得到", "找到", "解决", "好了", "开心", "笑", "谢谢", "挥手", "再见", "下次", "约好"]);
   if (!hasClosure) reasons.push("zh_missing_closure");
 
+  const pausePunct = (s.match(/[，、]/g) ?? []).length;
+  if (pausePunct < 1) reasons.push("zh_missing_pause_punct");
+
   const seriesKeys = ["汪汪队", "旺旺队", "超级飞侠", "小猪佩奇", "巴巴爸爸一家人", "巴巴爸爸"];
   const seriesCount = countIncludes(s, seriesKeys);
   if (seriesCount !== 1) reasons.push("zh_series_not_single");
@@ -390,10 +393,11 @@ export async function POST(req: Request) {
       '{ "storyZh": "中文故事", "storyEn": "English story" }',
       "",
       "中文故事规则：",
-      "- 只能出现中文汉字和中文标点：句号。逗号，问号？感叹号！",
+      "- 只能出现中文汉字和中文标点：句号。逗号，顿号、问号？感叹号！",
       "- 禁止空格、英文、数字、表情、引号、括号、书名号、冒号、分号、破折号、省略号、任何特殊符号",
       "- 全文六到十句，短句为主，每句只说一件事，每句尽量不超过十五个字，每句必须用句号结尾",
       "- 不是睡前故事：不要出现晚安、做梦、闭眼、快去睡等内容",
+      "- 句子中间可以自然使用逗号或顿号做停顿，且全文至少出现一次逗号或顿号",
       "",
       "English story rules:",
       "- Use only English letters (A-Z a-z), spaces, commas, periods, question marks, exclamation marks.",

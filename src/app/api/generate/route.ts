@@ -39,13 +39,13 @@ function sanitizeStrictStory(story: string) {
   let s = story.replace(/\s+/g, "");
   s = s.replace(/[？！]/g, "。");
   // Keep only CJK ideographs + allowed punctuation.
-  s = s.replace(/[^\u4e00-\u9fff。，？！]/g, "");
+  s = s.replace(/[^\u4e00-\u9fff。，？！、]/g, "");
   // Enforce "。"-only sentence ending requirement.
   s = s.replace(/[？！]/g, "。");
 
   const sentences = s
     .split("。")
-    .map((x) => x.replace(/，+$/g, ""))
+    .map((x) => x.replace(/[，、]+$/g, ""))
     .filter((x) => x.length > 0)
     .slice(0, 10);
 
