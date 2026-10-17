@@ -1,3 +1,5 @@
+import { withWebGuard, GuardError, bufferedFetch } from "../../../../server/ai-guard.cjs";
+import { policy } from "../../../../server/policy.cjs";
 import { appendMemory } from "@/lib/memories";
 import { zhipuChatCompletions } from "@/lib/zhipu";
 import { zhipuTts } from "@/lib/zhipu";
@@ -124,7 +126,7 @@ function buildSystemPromptEn() {
   ].join("\n");
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   let requestId: string | undefined;
   try {
     const apiKey = requireEnv("ZHIPU_API_KEY");
@@ -269,7 +271,7 @@ export async function POST(req: Request) {
       );
       let res: Response;
       try {
-        res = await fetch(endpoint, {
+        res = await bufferedFetch(endpoint, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -441,6 +443,7 @@ export async function POST(req: Request) {
       },
     );
   } catch (e) {
+    if (e instanceof GuardError) throw e;
     const message = e instanceof Error ? e.message : "Server error";
     console.error("[/api/chat] error", { message, requestId });
     return NextResponse.json<ChatErr>(
@@ -448,4 +451,8 @@ export async function POST(req: Request) {
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
+}
+
+export async function POST(req: Request) {
+  return withWebGuard(req, policy, handlePOST);
 }

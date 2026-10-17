@@ -1,3 +1,4 @@
+import { bufferedFetch } from "../../server/ai-guard.cjs";
 type ZhipuChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -22,7 +23,7 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await bufferedFetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(t);
   }
