@@ -1,3 +1,5 @@
+import { withWebGuard, GuardError } from "../../../../server/ai-guard.cjs";
+import { policy } from "../../../../server/policy.cjs";
 import { zhipuChatCompletions } from "@/lib/zhipu";
 import { appendMemory } from "@/lib/memories";
 import { NextResponse } from "next/server";
@@ -100,7 +102,7 @@ function rewriteTemplateEnding(story: string, seed: string) {
   return `${without}${joiner}${tail}`;
 }
 
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   let requestId: string | undefined;
   let seedForLog = "";
   let storyForLog = "";
@@ -265,6 +267,7 @@ export async function POST(req: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
+    if (e instanceof GuardError) throw e;
     const message = e instanceof Error ? e.message : "Server error";
     // Helpful for Vercel function logs; do not include secrets.
     console.error("[/api/generate] error", { message, requestId });
@@ -273,4 +276,8 @@ export async function POST(req: Request) {
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
+}
+
+export async function POST(req: Request) {
+  return withWebGuard(req, policy, handlePOST);
 }
